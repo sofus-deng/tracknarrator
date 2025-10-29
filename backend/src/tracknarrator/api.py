@@ -14,6 +14,8 @@ from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
 from .store import store
 from .schema import SessionBundle
+from .events import detect_events, top5_events, build_sparklines
+from .narrative import build_narrative
 
 # Constants for seed endpoint
 MAX_BYTES = 2 * 1024 * 1024  # 2MB guard
@@ -265,6 +267,80 @@ async def dev_seed(
         status_code=400,
         detail="Provide either JSON body or multipart file field 'file'"
     )
+
+
+@app.get("/session/{session_id}/events")
+async def get_session_events(session_id: str) -> Dict[str, Any]:
+    """
+    Get detected events for a session.
+    
+    Args:
+        session_id: Session ID to retrieve events for
+        
+    Returns:
+        Dictionary with all events and top 5 events
+    """
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Detect all events and get top 5
+    all_events = detect_events(bundle)
+    top5 = top5_events(bundle)
+    
+    return {
+        "events": all_events,
+        "top5": top5
+    }
+
+
+@app.get("/session/{session_id}/sparklines")
+async def get_session_sparklines(session_id: str) -> Dict[str, Any]:
+    """
+    Get sparkline data for a session.
+    
+    Args:
+        session_id: Session ID to retrieve sparklines for
+        
+    Returns:
+        Dictionary with sparkline data
+    """
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Build sparklines
+    sparklines = build_sparklines(bundle)
+    
+    return sparklines
+
+
+@app.get("/session/{session_id}/narrative")
+async def get_session_narrative(session_id: str) -> Dict[str, Any]:
+    """
+    Get AI-native narrative for a session.
+    
+    Args:
+        session_id: Session ID to retrieve narrative for
+        
+    Returns:
+        Dictionary with narrative data
+    """
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Get AI-native setting
+    settings = get_settings()
+    ai_native = settings.ai_native
+    
+    # Get top 5 events for narrative
+    top5 = top5_events(bundle)
+    
+    # Build narrative
+    narrative = build_narrative(bundle, top5, ai_native)
+    
+    return narrative
 
 
 @app.exception_handler(HTTPException)
