@@ -1,0 +1,242 @@
+"""TRD long CSV importer with pivot functionality."""
+
+import csv
+import io
+from collections import defaultdict
+from typing import BinaryIO, TextIO
+
+from .base import ImportResult, coerce_float, coerce_int
+from ..schema import Session, SessionBundle, Telemetry
+from ..utils_time import iso_to_ms
+
+
+class TRDLongCSVImporter:
+    """Importer for TRD R1/R2 telemetry long-format CSV files."""
+    
+    # Pivot map: telemetry_name -> field_name
+    PIVOT_MAP = {
+        "speed": "speed_kph",
+        "aps": "throttle_pct", 
+        "pbrake_f": "brake_bar",
+        "pbrake_r": "brake_bar",  # fallback
+        "gear": "gear",
+        "accx_can": "acc_long_g",
+        "accy_can": "acc_lat_g", 
+        "Steering_Angle": "steer_deg",
+        "VBOX_Lat_Min": "lat_deg",
+        "VBOX_Long_Minutes": "lon_deg",
+    }
+    
+    # Numeric tolerances and validation rules
+    THROTTLE_MIN, THROTTLE_MAX = 0.0, 100.0
+    GEAR_MIN, GEAR_MAX = 0, 10
+    ACC_MIN, ACC_MAX = -10.0, 10.0
+    STEER_MIN, STEER_MAX = -720.0, 720.0
+    SPEED_MIN, SPEED_MAX = 0.0, 350.0
+    BRAKE_MIN, BRAKE_MAX = 0.0, 200.0
+    
+    @classmethod
+    def import_file(cls, file: BinaryIO | TextIO, session_id: str) -> ImportResult:
+        """
+        Import TRD long CSV file and pivot to telemetry format.
+        
+        Args:
+            file: File-like object containing CSV data
+            session_id: Session ID for the telemetry data
+            
+        Returns:
+            ImportResult with telemetry data and any warnings
+        """
+        warnings = []
+        
+        try:
+            # Handle both binary and text files
+            if hasattr(file, 'read'):
+                content = file.read()
+                if isinstance(content, bytes):
+                    text_io = io.TextIOWrapper(io.BytesIO(content), encoding='utf-8')
+                else:
+                    text_io = io.StringIO(content)
+            else:
+                text_io = file
+            
+            # Read CSV data
+            reader = csv.DictReader(text_io)
+            rows = list(reader)
+            
+            if not rows:
+                return ImportResult.failure(["Empty CSV file"])
+            
+            # Group by timestamp and pivot
+            telemetry_by_timestamp = defaultdict(dict)
+            unknown_names = set()
+            
+            for row in rows:
+                timestamp = row.get('timestamp') or row.get('meta_time')
+                if not timestamp:
+                    warnings.append("Row missing timestamp, skipping")
+                    continue
+                
+                try:
+                    ts_ms = iso_to_ms(timestamp)
+                except ValueError as e:
+                    warnings.append(f"Invalid timestamp '{timestamp}': {e}")
+                    continue
+                
+                telemetry_name = row.get('telemetry_name', '').strip()
+                telemetry_value = row.get('telemetry_value', '').strip()
+                
+                if not telemetry_name:
+                    continue
+                
+                # Map telemetry name to field
+                field_name = cls.PIVOT_MAP.get(telemetry_name)
+                if not field_name:
+                    unknown_names.add(telemetry_name)
+                    continue
+                
+                # Store multiple values for the same field to handle duplicates
+                if field_name not in telemetry_by_timestamp[ts_ms]:
+                    telemetry_by_timestamp[ts_ms][field_name] = []
+                telemetry_by_timestamp[ts_ms][field_name].append(telemetry_value)
+            
+            # Add warning for unknown telemetry names
+            if unknown_names:
+                warnings.append(f"Unknown telemetry names: {', '.join(sorted(unknown_names))}")
+            
+            # Convert grouped data to Telemetry objects
+            telemetry_list = []
+            
+            for ts_ms, field_values in telemetry_by_timestamp.items():
+                # Apply pbrake_r fallback if pbrake_f missing
+                if 'brake_bar' not in field_values:
+                    # Look for pbrake_r in original rows for this timestamp
+                    for row in rows:
+                        if (row.get('timestamp') or row.get('meta_time')) and \
+                           iso_to_ms(row.get('timestamp') or row.get('meta_time')) == ts_ms:
+                            if row.get('telemetry_name') == 'pbrake_r':
+                                field_values['brake_bar'] = [row.get('telemetry_value', '')]
+                                break
+                
+                # Process field values - handle multiple values per field
+                telemetry_data = {'session_id': session_id, 'ts_ms': ts_ms}
+                valid_fields_count = 0
+                
+                total_fields_count = 0
+                
+                for field_name, raw_values in field_values.items():
+                    # Check all values - if any are outliers, reject the field
+                    field_valid = True
+                    final_value = None
+                    
+                    for raw_value in raw_values:
+                        processed_value = cls._process_field_value(field_name, raw_value, check_outlier_only=True)
+                        if processed_value is False:  # This means it's an outlier (False, not None)
+                            field_valid = False
+                            break
+                    
+                    # If field is valid, get the first valid value
+                    if field_valid:
+                        for raw_value in raw_values:
+                            processed_value = cls._process_field_value(field_name, raw_value, check_outlier_only=False)
+                            if processed_value is not None:
+                                final_value = processed_value
+                                break
+                    else:
+                        # For outlier fields, set to None but still count as a field
+                        final_value = None
+                    
+                    # Always include the field, but set to None if it's an outlier
+                    telemetry_data[field_name] = final_value
+                    total_fields_count += 1
+                    if final_value is not None:
+                        valid_fields_count += 1
+                
+                # Keep row only if at least 5 fields present (including outliers)
+                if total_fields_count >= 5:
+                    telemetry_list.append(Telemetry(**telemetry_data))
+            
+            if not telemetry_list:
+                return ImportResult.failure(["No valid telemetry rows found"])
+            
+            # Create session and bundle
+            session = Session(
+                id=session_id,
+                source="trd_csv",
+                track_id="unknown",  # Will be updated by other importers
+            )
+            
+            bundle = SessionBundle(
+                session=session,
+                telemetry=telemetry_list
+            )
+            
+            return ImportResult.success(bundle, warnings)
+            
+        except Exception as e:
+            return ImportResult.failure([f"Error processing TRD CSV: {str(e)}"])
+    
+    @classmethod
+    def _process_field_value(cls, field_name: str, raw_value: str, check_outlier_only: bool = False):
+        """Process and validate a single field value."""
+        if not raw_value or raw_value.lower() in ('', 'nan', 'inf', '-inf'):
+            return None
+        
+        try:
+            if field_name in ['speed_kph', 'throttle_pct', 'brake_bar', 'acc_long_g', 'acc_lat_g', 'steer_deg', 'lat_deg', 'lon_deg']:
+                value = float(raw_value)
+                if check_outlier_only:
+                    return cls._validate_numeric_field(field_name, value, check_outlier_only=True)
+                else:
+                    return cls._validate_numeric_field(field_name, value)
+            elif field_name == 'gear':
+                value = int(float(raw_value))  # Handle "6.0" -> 6
+                if check_outlier_only:
+                    return cls._validate_gear(value, check_outlier_only=True)
+                else:
+                    return cls._validate_gear(value)
+            else:
+                return None
+        except (ValueError, TypeError):
+            return None
+    
+    @classmethod
+    def _validate_numeric_field(cls, field_name: str, value: float, check_outlier_only: bool = False):
+        """Validate and clamp numeric fields according to specifications."""
+        if field_name == 'throttle_pct':
+            # Clamp throttle to [0, 100]
+            if check_outlier_only:
+                return True  # Throttle is clamped, never rejected as outlier
+            return max(cls.THROTTLE_MIN, min(cls.THROTTLE_MAX, value))
+        elif field_name == 'speed_kph':
+            # Set None for outliers outside expected range
+            if cls.SPEED_MIN <= value <= cls.SPEED_MAX:
+                return value if not check_outlier_only else True
+            return None if not check_outlier_only else False
+        elif field_name == 'brake_bar':
+            # Set None for outliers outside expected range
+            if cls.BRAKE_MIN <= value <= cls.BRAKE_MAX:
+                return value if not check_outlier_only else True
+            return None if not check_outlier_only else False
+        elif field_name in ['acc_long_g', 'acc_lat_g']:
+            # Set None for outliers outside ±10g
+            if cls.ACC_MIN <= value <= cls.ACC_MAX:
+                return value if not check_outlier_only else True
+            return None if not check_outlier_only else False
+        elif field_name == 'steer_deg':
+            # Set None for outliers outside ±720 degrees
+            if cls.STEER_MIN <= value <= cls.STEER_MAX:
+                return value if not check_outlier_only else True
+            return None if not check_outlier_only else False
+        elif field_name in ['lat_deg', 'lon_deg']:
+            # No range validation for coordinates
+            return value if not check_outlier_only else True
+        else:
+            return value if not check_outlier_only else True
+    
+    @classmethod
+    def _validate_gear(cls, value: int, check_outlier_only: bool = False):
+        """Validate gear value."""
+        if cls.GEAR_MIN <= value <= cls.GEAR_MAX:
+            return value if not check_outlier_only else True
+        return None if not check_outlier_only else False
