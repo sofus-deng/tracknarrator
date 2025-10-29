@@ -1,10 +1,12 @@
 """FastAPI application for Track Narrator."""
 
 import io
-from typing import Dict, Any
+import json
+from typing import Dict, Any, Union
 
-from fastapi import FastAPI, UploadFile, HTTPException, Query, File
+from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Body
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from .config import get_settings
 from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
@@ -12,6 +14,9 @@ from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
 from .store import store
 from .schema import SessionBundle
+
+# Constants for seed endpoint
+MAX_BYTES = 2 * 1024 * 1024  # 2MB guard
 
 
 # Create FastAPI app
@@ -177,6 +182,89 @@ async def get_session_bundle(session_id: str) -> SessionBundle:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     
     return bundle
+
+
+@app.post("/dev/seed")
+async def dev_seed(
+    request: Request,
+    file: Union[UploadFile, None] = File(default=None)
+) -> Dict[str, Any]:
+    """
+    Seed the in-memory store with session data.
+    
+    Accepts either:
+    1. JSON body with SessionBundle
+    2. Multipart form with file field containing JSON
+    
+    Args:
+        request: FastAPI request object
+        file: Optional uploaded file with JSON data
+        
+    Returns:
+        Dictionary with operation status, mode, session_id, counts and warnings
+    """
+    ctype = request.headers.get("content-type", "").lower()
+    
+    # Case A: JSON body
+    if "application/json" in ctype:
+        try:
+            # Parse the JSON body manually
+            body = await request.body()
+            if not body:
+                raise HTTPException(status_code=422, detail="Empty JSON body")
+            
+            payload = json.loads(body.decode("utf-8"))
+            bundle = SessionBundle.model_validate(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid seed JSON: {e}"
+            ) from e
+        
+        sid = bundle.session.id
+        counts, warnings = store.merge_bundle(sid, bundle, src="dev_seed_json")
+        
+        return {
+            "ok": True,
+            "mode": "json",
+            "session_id": sid,
+            "counts": counts,
+            "warnings": warnings
+        }
+    
+    # Case B: multipart with file
+    if file is not None:
+        data = await file.read()
+        if len(data) > MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Seed file too large (> {MAX_BYTES} bytes)"
+            )
+        
+        try:
+            payload = json.loads(data.decode("utf-8"))
+            bundle = SessionBundle.model_validate(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid seed JSON: {e}"
+            ) from e
+        
+        sid = bundle.session.id
+        counts, warnings = store.merge_bundle(sid, bundle, src="dev_seed_file")
+        
+        return {
+            "ok": True,
+            "mode": "file",
+            "session_id": sid,
+            "counts": counts,
+            "warnings": warnings
+        }
+    
+    raise HTTPException(
+        status_code=400,
+        detail="Provide either JSON body or multipart file field 'file'"
+    )
 
 
 @app.exception_handler(HTTPException)

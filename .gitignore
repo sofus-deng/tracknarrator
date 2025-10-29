@@ -1,0 +1,28 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
+.venv/
+.uv/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+# --- Env/Logs ---
+.env
+.env.*
+*.log
+# --- Editors/OS ---
+.vscode/
+.idea/
+.DS_Store
+# --- Node (future FE) ---
+node_modules/
+# --- Data/temp (keep fixtures!) ---
+tmp/
+data/
+# Do NOT ignore fixtures/*.json

@@ -1,0 +1,252 @@
+{
+  "session": {
+    "id": "barber-demo-r1",
+    "source": "mylaps_csv",
+    "track": "Barber Motorsports Park",
+    "track_id": "barber-motorsports-park",
+    "track_map_version": "pdf:Barber_Circuit_Map",
+    "start_ts": null,
+    "end_ts": null,
+    "schema_version": "0.1.2"
+  },
+  "laps": [
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 1,
+      "driver": "No.1",
+      "laptime_ms": 105342,
+      "start_ts": null,
+      "end_ts": null,
+      "position": null
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 2,
+      "driver": "No.1",
+      "laptime_ms": 99505,
+      "start_ts": null,
+      "end_ts": null,
+      "position": null
+    }
+  ],
+  "sections": [
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 1,
+      "name": "IM1a",
+      "t_start_ms": 0,
+      "t_end_ms": 21125,
+      "delta_ms": null,
+      "meta": {
+        "source": "map"
+      }
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 1,
+      "name": "IM1",
+      "t_start_ms": 21125,
+      "t_end_ms": 42250,
+      "delta_ms": null,
+      "meta": {
+        "source": "map"
+      }
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 1,
+      "name": "IM2a",
+      "t_start_ms": 42250,
+      "t_end_ms": 73343,
+      "delta_ms": null,
+      "meta": {
+        "source": "map"
+      }
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 1,
+      "name": "IM3a",
+      "t_start_ms": 73343,
+      "t_end_ms": 84977,
+      "delta_ms": null,
+      "meta": {
+        "source": "map"
+      }
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 2,
+      "name": "IM1a",
+      "t_start_ms": 0,
+      "t_end_ms": 17339,
+      "delta_ms": null,
+      "meta": {
+        "source": "map"
+      }
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 2,
+      "name": "IM1",
+      "t_start_ms": 17339,
+      "t_end_ms": 34678,
+      "delta_ms": null,
+      "meta": {
+        "source": "map"
+      }
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 2,
+      "name": "IM2a",
+      "t_start_ms": 34678,
+      "t_end_ms": 64930,
+      "delta_ms": null,
+      "meta": {
+        "source": "map"
+      }
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "lap_no": 2,
+      "name": "IM3a",
+      "t_start_ms": 64930,
+      "t_end_ms": 76100,
+      "delta_ms": null,
+      "meta": {
+        "source": "map"
+      }
+    }
+  ],
+  "telemetry": [
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757043457661,
+      "speed_kph": 126.75,
+      "throttle_pct": 92.63,
+      "brake_bar": 0.0,
+      "gear": 3,
+      "acc_long_g": 0.331,
+      "acc_lat_g": 0.043000000000000003,
+      "steer_deg": 9.5,
+      "lat_deg": 33.53092956542969,
+      "lon_deg": -86.61917114257812
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757043457704,
+      "speed_kph": null,
+      "throttle_pct": 92.32000000000001,
+      "brake_bar": 0.0,
+      "gear": 3,
+      "acc_long_g": 0.364,
+      "acc_lat_g": 0.151,
+      "steer_deg": 9.5,
+      "lat_deg": 33.53091812133789,
+      "lon_deg": -86.61920166015625
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757043457749,
+      "speed_kph": null,
+      "throttle_pct": 90.38,
+      "brake_bar": 0.0,
+      "gear": 3,
+      "acc_long_g": 0.292,
+      "acc_lat_g": 0.07100000000000001,
+      "steer_deg": 9.5,
+      "lat_deg": 33.53091812133789,
+      "lon_deg": -86.61920166015625
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757043457792,
+      "speed_kph": null,
+      "throttle_pct": 88.03,
+      "brake_bar": 0.0,
+      "gear": 3,
+      "acc_long_g": 0.28400000000000003,
+      "acc_lat_g": 0.085,
+      "steer_deg": 9.4,
+      "lat_deg": 33.530906677246094,
+      "lon_deg": -86.6192398071289
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757043457835,
+      "speed_kph": null,
+      "throttle_pct": 84.68,
+      "brake_bar": 0.0,
+      "gear": 3,
+      "acc_long_g": 0.244,
+      "acc_lat_g": 0.154,
+      "steer_deg": 9.0,
+      "lat_deg": 33.530906677246094,
+      "lon_deg": -86.6192398071289
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757043457878,
+      "speed_kph": 128.22,
+      "throttle_pct": 81.96000000000001,
+      "brake_bar": 0.0,
+      "gear": 3,
+      "acc_long_g": 0.158,
+      "acc_lat_g": 0.08,
+      "steer_deg": 8.9,
+      "lat_deg": 33.530906677246094,
+      "lon_deg": -86.6192398071289
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757043457921,
+      "speed_kph": null,
+      "throttle_pct": 78.15,
+      "brake_bar": 0.0,
+      "gear": 3,
+      "acc_long_g": 0.162,
+      "acc_lat_g": 0.107,
+      "steer_deg": 8.8,
+      "lat_deg": 33.5308952331543,
+      "lon_deg": -86.61927795410156
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757043457966,
+      "speed_kph": null,
+      "throttle_pct": 67.27,
+      "brake_bar": 0.0,
+      "gear": 3,
+      "acc_long_g": 0.246,
+      "acc_lat_g": 0.055,
+      "steer_deg": 8.4,
+      "lat_deg": 33.5308837890625,
+      "lon_deg": -86.61930847167969
+    }
+  ],
+  "weather": [
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757184078000,
+      "air_temp_c": 29.8,
+      "track_temp_c": 0.0,
+      "humidity_pct": 56.75,
+      "pressure_hpa": 992.9,
+      "wind_speed": 2.88,
+      "wind_dir_deg": 342.0,
+      "rain_flag": 0
+    },
+    {
+      "session_id": "barber-demo-r1",
+      "ts_ms": 1757184141000,
+      "air_temp_c": 29.87,
+      "track_temp_c": 0.0,
+      "humidity_pct": 57.23,
+      "pressure_hpa": 993.0,
+      "wind_speed": 5.04,
+      "wind_dir_deg": 280.0,
+      "rain_flag": 0
+    }
+  ]
+}
