@@ -12,6 +12,7 @@ from .config import get_settings
 from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
 from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
+from .importers.racechrono_csv import RaceChronoCSVImporter
 from .store import store
 from .schema import SessionBundle
 from .events import detect_events, top5_events, build_sparklines
@@ -19,6 +20,7 @@ from .narrative import build_narrative
 
 # Constants for seed endpoint
 MAX_BYTES = 2 * 1024 * 1024  # 2MB guard
+MAX_RACECHRONO_BYTES = 10 * 1024 * 1024  # 10MB guard for RaceChrono
 
 
 # Create FastAPI app
@@ -164,6 +166,56 @@ async def ingest_weather(
             "warnings": warnings
         }
         
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+
+@app.post("/ingest/racechrono")
+async def ingest_racechrono(
+    session_id: str = Query(..., description="Session ID for the data"),
+    file: UploadFile = File(..., description="RaceChrono CSV file")
+) -> Dict[str, Any]:
+    """
+    Ingest RaceChrono CSV telemetry data.
+    
+    Args:
+        session_id: Session ID for the data
+        file: RaceChrono CSV file
+        
+    Returns:
+        Dictionary with counts and warnings
+    """
+    try:
+        # Read file content with size guard
+        content = await file.read()
+        if len(content) > MAX_RACECHRONO_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large (> {MAX_RACECHRONO_BYTES // (1024*1024)}MB)"
+            )
+        
+        file_obj = io.BytesIO(content)
+        
+        # Import data
+        result = RaceChronoCSVImporter.import_file(file_obj, session_id)
+        
+        if result.bundle is None:
+            raise HTTPException(status_code=400, detail=f"Import failed: {result.warnings}")
+        
+        # Merge into store
+        counts, warnings = store.merge_bundle(session_id, result.bundle, "racechrono_csv")
+        warnings.extend(result.warnings)
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "counts": counts,
+            "warnings": warnings
+        }
+        
+    except HTTPException as e:
+        # Re-raise HTTP exceptions to be handled by the HTTP exception handler
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 

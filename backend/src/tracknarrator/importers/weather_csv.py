@@ -2,7 +2,7 @@
 
 import csv
 import io
-from typing import BinaryIO, Dict, List, TextIO
+from typing import BinaryIO, Dict, List, TextIO, Tuple
 
 from .base import ImportResult, coerce_float, coerce_int
 from ..schema import Session, SessionBundle, WeatherPoint
@@ -39,22 +39,16 @@ class WeatherCSVImporter:
         warnings = []
         
         try:
-            # Handle both binary and text files
-            if hasattr(file, 'read'):
-                content = file.read()
-                if isinstance(content, bytes):
-                    text_io = io.TextIOWrapper(io.BytesIO(content), encoding='utf-8')
-                else:
-                    text_io = io.StringIO(content)
-            else:
-                text_io = file
+            # Handle both binary and text files with encoding fallback
+            content, encoding_used = cls._read_file_with_encoding_fallback(file)
+            if content is None:
+                return ImportResult.failure(["Failed to read file with any supported encoding"])
             
-            # Auto-detect delimiter (semicolon or comma)
-            sample = text_io.read(1024)
-            text_io.seek(0)
-            delimiter = ';' if ';' in sample else ','
+            # Auto-detect delimiter
+            delimiter = cls._detect_delimiter(content)
             
             # Read CSV data
+            text_io = io.StringIO(content)
             reader = csv.DictReader(text_io, delimiter=delimiter)
             rows = list(reader)
             
@@ -208,3 +202,54 @@ class WeatherCSVImporter:
         if weather_data['rain_flag'] is not None:
             if weather_data['rain_flag'] not in [0, 1]:
                 warnings.append(f"Row {row_num}: Rain flag should be 0 or 1, got {weather_data['rain_flag']}")
+    
+    @classmethod
+    def _read_file_with_encoding_fallback(cls, file: BinaryIO | TextIO) -> Tuple[str, str]:
+        """
+        Read file with encoding fallback: utf-8 -> utf-8-sig -> latin1.
+        
+        Returns:
+            tuple: (content, encoding_used) or (None, None) if all fail
+        """
+        encodings = ['utf-8', 'utf-8-sig', 'latin1']
+        
+        # Handle binary file
+        if hasattr(file, 'read'):
+            content = file.read()
+            if isinstance(content, bytes):
+                for encoding in encodings:
+                    try:
+                        decoded = content.decode(encoding)
+                        # Remove BOM if present
+                        if decoded.startswith('\ufeff'):
+                            decoded = decoded[1:]
+                        return decoded, encoding
+                    except UnicodeDecodeError:
+                        continue
+                return None, None
+            else:
+                # Already text, remove BOM if present
+                text = content
+                if text.startswith('\ufeff'):
+                    text = text[1:]
+                return text, 'utf-8'
+        else:
+            # Already text, remove BOM if present
+            text = str(file)
+            if text.startswith('\ufeff'):
+                text = text[1:]
+            return text, 'utf-8'
+    
+    @classmethod
+    def _detect_delimiter(cls, content: str) -> str:
+        """
+        Auto-detect CSV delimiter based on first line.
+        
+        Returns:
+            ';' if more semicolons than commas, otherwise ','
+        """
+        first_line = content.split('\n')[0] if '\n' in content else content
+        semicolon_count = first_line.count(';')
+        comma_count = first_line.count(',')
+        
+        return ';' if semicolon_count > comma_count else ','

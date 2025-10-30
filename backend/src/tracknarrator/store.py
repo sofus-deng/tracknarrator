@@ -182,46 +182,50 @@ class SessionStore:
         return counts, warnings
     
     def _merge_telemetry(self, existing_bundle: SessionBundle, new_telemetry: List[Telemetry], src: str) -> Tuple[Dict[str, int], List[str]]:
-        """Merge telemetry with conflict resolution."""
+        """Merge telemetry with conflict resolution using ±1ms buckets."""
         counts = {"telemetry_added": 0, "telemetry_updated": 0}
         warnings = []
         
-        # Create index for existing telemetry with tolerance
-        telemetry_index = {}
-        for telemetry in existing_bundle.telemetry:
-            telemetry_index[telemetry.ts_ms] = telemetry
+        # Create index for existing telemetry with ±1ms buckets
+        telemetry_buckets = self._create_telemetry_buckets(existing_bundle.telemetry)
         
         for new_telemetry in new_telemetry:
             # Add provenance metadata
             self._add_provenance(new_telemetry, src)
             
-            # Find matching telemetry with ±1ms tolerance
-            matching_ts = None
-            for existing_ts in telemetry_index:
-                if abs(existing_ts - new_telemetry.ts_ms) <= 1:
-                    matching_ts = existing_ts
+            # Find matching telemetry bucket within ±1ms
+            matching_bucket_ts = None
+            for bucket_ts in telemetry_buckets:
+                if abs(bucket_ts - new_telemetry.ts_ms) <= 1:
+                    matching_bucket_ts = bucket_ts
                     break
             
-            if matching_ts is None:
+            if matching_bucket_ts is None:
                 # New telemetry - add it
                 existing_bundle.telemetry.append(new_telemetry)
-                telemetry_index[new_telemetry.ts_ms] = new_telemetry
+                telemetry_buckets[new_telemetry.ts_ms] = [new_telemetry]
                 counts["telemetry_added"] += 1
             else:
-                # Existing telemetry - merge field by field
-                existing_telemetry = telemetry_index[matching_ts]
+                # Existing telemetry bucket - merge with best match
+                existing_telemetry_list = telemetry_buckets[matching_bucket_ts]
+                best_existing = self._find_best_telemetry_match(existing_telemetry_list, new_telemetry)
+                
                 precedence_list = self.source_precedence["telemetry"]
                 
-                if self._has_higher_precedence(src, existing_telemetry, precedence_list):
-                    self._merge_telemetry_fields(existing_telemetry, new_telemetry)
+                if self._has_higher_precedence(src, best_existing, precedence_list):
+                    # Higher precedence - replace existing
+                    existing_bundle.telemetry.remove(best_existing)
+                    existing_telemetry_list.remove(best_existing)
+                    existing_bundle.telemetry.append(new_telemetry)
+                    existing_telemetry_list.append(new_telemetry)
                     counts["telemetry_updated"] += 1
                 else:
                     # Check for conflicts and warn
-                    conflicts = self._detect_telemetry_conflicts(existing_telemetry, new_telemetry)
+                    conflicts = self._detect_telemetry_conflicts(best_existing, new_telemetry)
                     if conflicts:
                         warnings.append(
                             f"Telemetry at {new_telemetry.ts_ms}ms: "
-                            f"conflicts in {', '.join(conflicts)} - keeping {self._get_source(existing_telemetry)}"
+                            f"conflicts in {', '.join(conflicts)} - keeping {self._get_source(best_existing)}"
                         )
         
         return counts, warnings
@@ -332,6 +336,74 @@ class SessionStore:
                 conflicts.append(field)
         
         return conflicts
+    
+    def _create_telemetry_buckets(self, telemetry_list: List[Telemetry]) -> Dict[int, List[Telemetry]]:
+        """
+        Create buckets for telemetry timestamps within ±1ms range.
+        
+        Args:
+            telemetry_list: List of existing telemetry points
+            
+        Returns:
+            Dictionary mapping bucket_timestamp -> list of telemetry points
+        """
+        if not telemetry_list:
+            return {}
+        
+        buckets = {}
+        
+        # Sort telemetry by timestamp
+        sorted_telemetry = sorted(telemetry_list, key=lambda t: t.ts_ms)
+        
+        for telemetry in sorted_telemetry:
+            ts_ms = telemetry.ts_ms
+            
+            # Find existing bucket within ±1ms
+            bucket_found = False
+            for bucket_ts in buckets:
+                if abs(bucket_ts - ts_ms) <= 1:
+                    buckets[bucket_ts].append(telemetry)
+                    bucket_found = True
+                    break
+            
+            if not bucket_found:
+                # Create new bucket
+                buckets[ts_ms] = [telemetry]
+        
+        return buckets
+    
+    def _find_best_telemetry_match(self, telemetry_list: List[Telemetry], new_telemetry: Telemetry) -> Telemetry:
+        """
+        Find the best matching telemetry from a list.
+        
+        Args:
+            telemetry_list: List of existing telemetry points in same bucket
+            new_telemetry: New telemetry point to match
+            
+        Returns:
+            Best matching telemetry point
+        """
+        if len(telemetry_list) == 1:
+            return telemetry_list[0]
+        
+        # Find telemetry with most non-None fields and closest timestamp
+        best_match = telemetry_list[0]
+        best_score = -1
+        
+        for telemetry in telemetry_list:
+            # Count non-None fields (excluding session_id and ts_ms)
+            non_none_count = sum(1 for k, v in telemetry.model_dump().items()
+                               if k not in ['session_id', 'ts_ms'] and v is not None)
+            
+            # Calculate score: prioritize non-None fields, then timestamp proximity
+            timestamp_diff = abs(telemetry.ts_ms - new_telemetry.ts_ms)
+            score = non_none_count * 1000 - timestamp_diff
+            
+            if score > best_score:
+                best_score = score
+                best_match = telemetry
+        
+        return best_match
     
     def get_bundle(self, session_id: str) -> Optional[SessionBundle]:
         """Get session bundle by ID."""
