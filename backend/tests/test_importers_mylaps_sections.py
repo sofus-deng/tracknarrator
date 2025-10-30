@@ -102,6 +102,26 @@ class TestMYLAPSSectionsCSVImporter:
         section_names = [s.name for s in result.bundle.sections]
         assert section_names == ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
     
+    def test_im10_explicit_negative_test(self):
+        """Explicit negative test that IM10 does NOT match IM1 pattern using (?!\d)."""
+        csv_content = """LAP_NUMBER;DRIVER_NUMBER;LAP_TIME;IM10;IM1
+1;1;1:23.456;0:15.000;0:25.678"""
+        
+        file_obj = io.StringIO(csv_content)
+        result = MYLAPSSectionsCSVImporter.import_file(file_obj, "test-session")
+        
+        assert result.bundle is not None
+        # Should only have 1 section (IM1), IM10 should be ignored
+        assert len(result.bundle.sections) == 1
+        
+        section_names = [s.name for s in result.bundle.sections]
+        assert section_names == ["IM1"]
+        
+        # Verify IM10 was not mapped to IM1 by checking the section times
+        im1_section = result.bundle.sections[0]
+        assert im1_section.name == "IM1"
+        assert im1_section.t_end_ms == 25678  # Should be IM1 time, not IM10 time
+    
     def test_missing_sections_warning(self):
         """Test warning for missing section headers."""
         csv_content = """LAP_NUMBER;DRIVER_NUMBER;LAP_TIME;IM1a;IM1;IM2a

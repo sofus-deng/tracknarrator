@@ -104,10 +104,32 @@ class TRDLongCSVImporter:
             if unknown_names:
                 warnings.append(f"Unknown telemetry names: {', '.join(sorted(unknown_names))}")
             
-            # Convert grouped data to Telemetry objects
+            # Convert grouped data to Telemetry objects with de-duplication
             telemetry_list = []
             
-            for ts_ms, field_values in telemetry_by_timestamp.items():
+            # Group timestamps into buckets within ±1 ms
+            timestamp_buckets = cls._bucket_timestamps(telemetry_by_timestamp)
+            
+            for bucket_ts, timestamps in timestamp_buckets.items():
+                # Find the best timestamp (one with most non-None fields)
+                best_ts_ms = None
+                best_field_count = -1
+                best_field_values = None
+                
+                for ts_ms in timestamps:
+                    field_values = telemetry_by_timestamp[ts_ms]
+                    non_none_count = sum(1 for values in field_values.values()
+                                        if values and any(cls._process_field_value(field_name, v) is not None
+                                                        for v in values))
+                    
+                    if non_none_count > best_field_count:
+                        best_field_count = non_none_count
+                        best_ts_ms = ts_ms
+                        best_field_values = field_values
+                
+                # Use the best timestamp and field values
+                ts_ms = best_ts_ms
+                field_values = best_field_values
                 # Apply pbrake_r fallback if pbrake_f missing
                 if 'brake_bar' not in field_values:
                     # Look for pbrake_r in original rows for this timestamp
@@ -152,8 +174,8 @@ class TRDLongCSVImporter:
                     if final_value is not None:
                         valid_fields_count += 1
                 
-                # Keep row only if at least 5 fields present (including outliers)
-                if total_fields_count >= 5:
+                # Keep row only if at least 5 mapped numeric fields (excluding outliers)
+                if valid_fields_count >= 5:
                     telemetry_list.append(Telemetry(**telemetry_data))
             
             if not telemetry_list:
@@ -228,9 +250,16 @@ class TRDLongCSVImporter:
             if cls.STEER_MIN <= value <= cls.STEER_MAX:
                 return value if not check_outlier_only else True
             return None if not check_outlier_only else False
-        elif field_name in ['lat_deg', 'lon_deg']:
-            # No range validation for coordinates
-            return value if not check_outlier_only else True
+        elif field_name == 'lat_deg':
+            # Validate latitude bounds [-90, 90]
+            if -90.0 <= value <= 90.0:
+                return value if not check_outlier_only else True
+            return None if not check_outlier_only else False
+        elif field_name == 'lon_deg':
+            # Validate longitude bounds [-180, 180]
+            if -180.0 <= value <= 180.0:
+                return value if not check_outlier_only else True
+            return None if not check_outlier_only else False
         else:
             return value if not check_outlier_only else True
     
@@ -240,3 +269,45 @@ class TRDLongCSVImporter:
         if cls.GEAR_MIN <= value <= cls.GEAR_MAX:
             return value if not check_outlier_only else True
         return None if not check_outlier_only else False
+    
+    @classmethod
+    def _bucket_timestamps(cls, telemetry_by_timestamp: dict) -> dict:
+        """
+        Group timestamps into buckets within ±1 ms range.
+        
+        Args:
+            telemetry_by_timestamp: Dictionary mapping timestamp -> field_values
+            
+        Returns:
+            Dictionary mapping bucket_timestamp -> list of original timestamps
+        """
+        if not telemetry_by_timestamp:
+            return {}
+        
+        # Sort timestamps
+        sorted_timestamps = sorted(telemetry_by_timestamp.keys())
+        
+        # Create buckets
+        buckets = {}
+        current_bucket = []
+        bucket_start = None
+        
+        for ts_ms in sorted_timestamps:
+            if bucket_start is None:
+                # Start first bucket
+                bucket_start = ts_ms
+                current_bucket = [ts_ms]
+            elif ts_ms - bucket_start <= 1:
+                # Within ±1 ms, add to current bucket
+                current_bucket.append(ts_ms)
+            else:
+                # Too far, start new bucket
+                buckets[bucket_start] = current_bucket
+                bucket_start = ts_ms
+                current_bucket = [ts_ms]
+        
+        # Add the last bucket
+        if current_bucket:
+            buckets[bucket_start] = current_bucket
+        
+        return buckets
