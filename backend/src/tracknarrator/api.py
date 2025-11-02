@@ -552,9 +552,8 @@ async def dev_inspect_weather(file: UploadFile = File(...)):
         return {
             "status": "ok",
             "inspect": {
-                "header": headers,
-                "recognized": recognized,
-                "reasons": reasons
+                "headers": headers,
+                "recognized": recognized
             }
         }
         

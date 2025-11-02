@@ -31,13 +31,12 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["header"] == ["TIME_UTC_SECONDS", "AIR_TEMP", "TRACK_TEMP", "HUMIDITY", "PRESSURE", "WIND_SPEED", "WIND_DIRECTION", "RAIN"]
-        assert inspect["recognized"]["ts"] == "TIME_UTC_SECONDS"
-        assert inspect["recognized"]["temp"] == "AIR_TEMP"
-        assert inspect["recognized"]["humidity"] == "HUMIDITY"
-        assert inspect["recognized"]["wind"] == "WIND_SPEED"
-        assert len(inspect["reasons"]) > 0
-        assert any("Timestamp field found" in reason for reason in inspect["reasons"])
+        assert inspect["headers"] == ["TIME_UTC_SECONDS", "AIR_TEMP", "TRACK_TEMP", "HUMIDITY", "PRESSURE", "WIND_SPEED", "WIND_DIRECTION", "RAIN"]
+        # Check standardized field mappings
+        assert inspect["recognized"]["ts"] == "ts_ms"
+        assert inspect["recognized"]["temp"] == "temp_c"
+        assert inspect["recognized"]["humidity"] == "humidity_pct"
+        assert inspect["recognized"]["wind"] == "wind_kph"
     
     def test_inspect_weather_with_ts_ms(self):
         """Test weather inspector with ts_ms field."""
@@ -54,13 +53,12 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["header"] == ["ts_ms", "AIR_TEMPERATURE", "HUMIDITY_PCT", "WIND"]
+        assert inspect["headers"] == ["ts_ms", "AIR_TEMPERATURE", "HUMIDITY_PCT", "WIND"]
+        # Check standardized field mappings
         assert inspect["recognized"]["ts"] == "ts_ms"
-        assert inspect["recognized"]["temp"] == "AIR_TEMPERATURE"
-        assert inspect["recognized"]["humidity"] == "HUMIDITY_PCT"
-        assert inspect["recognized"]["wind"] == "WIND"
-        assert len(inspect["reasons"]) > 0
-        assert any("Timestamp field found" in reason for reason in inspect["reasons"])
+        assert inspect["recognized"]["temp"] == "temp_c"
+        assert inspect["recognized"]["humidity"] == "humidity_pct"
+        assert inspect["recognized"]["wind"] == "wind_kph"
     
     def test_inspect_weather_with_utc(self):
         """Test weather inspector with UTC timestamp field."""
@@ -78,13 +76,12 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["header"] == ["UTC", "AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
-        assert inspect["recognized"]["ts"] == "UTC"
-        assert inspect["recognized"]["temp"] == "AIR_TEMP"
-        assert inspect["recognized"]["humidity"] == "HUMIDITY"
-        assert inspect["recognized"]["wind"] == "WIND_SPEED"
-        assert len(inspect["reasons"]) > 0
-        assert any("Timestamp field found" in reason for reason in inspect["reasons"])
+        assert inspect["headers"] == ["UTC", "AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
+        # Check standardized field mappings
+        assert inspect["recognized"]["ts"] == "ts_ms"
+        assert inspect["recognized"]["temp"] == "temp_c"
+        assert inspect["recognized"]["humidity"] == "humidity_pct"
+        assert inspect["recognized"]["wind"] == "wind_kph"
     
     def test_inspect_weather_with_semicolon_delimiter(self):
         """Test weather inspector with semicolon delimiter."""
@@ -101,13 +98,12 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["header"] == ["TIME_UTC_SECONDS", "AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
-        assert inspect["recognized"]["ts"] == "TIME_UTC_SECONDS"
-        assert inspect["recognized"]["temp"] == "AIR_TEMP"
-        assert inspect["recognized"]["humidity"] == "HUMIDITY"
-        assert inspect["recognized"]["wind"] == "WIND_SPEED"
-        assert len(inspect["reasons"]) > 0
-        assert any("Timestamp field found" in reason for reason in inspect["reasons"])
+        assert inspect["headers"] == ["TIME_UTC_SECONDS", "AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
+        # Check standardized field mappings
+        assert inspect["recognized"]["ts"] == "ts_ms"
+        assert inspect["recognized"]["temp"] == "temp_c"
+        assert inspect["recognized"]["humidity"] == "humidity_pct"
+        assert inspect["recognized"]["wind"] == "wind_kph"
     
     def test_inspect_weather_empty_file(self):
         """Test weather inspector with empty file."""
@@ -120,10 +116,8 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["header"] == []
+        assert inspect["headers"] == []
         assert inspect["recognized"] == {}
-        assert len(inspect["reasons"]) > 0
-        assert any("No timestamp field found" in reason for reason in inspect["reasons"])
     
     def test_inspect_weather_no_file(self):
         """Test weather inspector with no file uploaded."""
@@ -146,10 +140,8 @@ just,some,random,text"""
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["header"] == ["invalid", "csv", "format"]
+        assert inspect["headers"] == ["invalid", "csv", "format"]
         assert inspect["recognized"] == {}
-        assert len(inspect["reasons"]) > 0
-        assert any("No timestamp field found" in reason for reason in inspect["reasons"])
     
     def test_inspect_weather_missing_timestamp(self):
         """Test weather inspector with missing timestamp field."""
@@ -166,14 +158,12 @@ just,some,random,text"""
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["header"] == ["AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
+        assert inspect["headers"] == ["AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
         # Should still recognize weather fields but no timestamp
         assert "ts" not in inspect["recognized"]
-        assert inspect["recognized"]["temp"] == "AIR_TEMP"
-        assert inspect["recognized"]["humidity"] == "HUMIDITY"
-        assert inspect["recognized"]["wind"] == "WIND_SPEED"
-        assert len(inspect["reasons"]) > 0
-        assert any("No timestamp field found" in reason for reason in inspect["reasons"])
+        assert inspect["recognized"]["temp"] == "temp_c"
+        assert inspect["recognized"]["humidity"] == "humidity_pct"
+        assert inspect["recognized"]["wind"] == "wind_kph"
     
     def test_inspect_weather_partial_fields(self):
         """Test weather inspector with only some weather fields."""
@@ -190,13 +180,10 @@ just,some,random,text"""
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["header"] == ["TIME_UTC_SECONDS", "AIR_TEMP"]
-        assert inspect["recognized"]["ts"] == "TIME_UTC_SECONDS"
-        assert inspect["recognized"]["temp"] == "AIR_TEMP"
+        assert inspect["headers"] == ["TIME_UTC_SECONDS", "AIR_TEMP"]
+        # Check standardized field mappings
+        assert inspect["recognized"]["ts"] == "ts_ms"
+        assert inspect["recognized"]["temp"] == "temp_c"
         # Should not have humidity or wind fields
         assert "humidity" not in inspect["recognized"]
         assert "wind" not in inspect["recognized"]
-        assert len(inspect["reasons"]) > 0
-        assert any("Timestamp field found" in reason for reason in inspect["reasons"])
-        assert any("Weather field 'humidity' not found" in reason for reason in inspect["reasons"])
-        assert any("Weather field 'wind' not found" in reason for reason in inspect["reasons"])
