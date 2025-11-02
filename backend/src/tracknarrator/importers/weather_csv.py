@@ -2,7 +2,7 @@
 
 import csv
 import io
-from typing import BinaryIO, Dict, List, TextIO, Tuple
+from typing import Any, BinaryIO, Dict, List, TextIO, Tuple
 
 from .base import ImportResult, coerce_float, coerce_int
 from ..schema import Session, SessionBundle, WeatherPoint
@@ -253,3 +253,99 @@ class WeatherCSVImporter:
         comma_count = first_line.count(',')
         
         return ';' if semicolon_count > comma_count else ','
+    
+    @classmethod
+    def resolve_columns(cls, headers: list[str]) -> tuple[dict, list[str]]:
+        """
+        Resolve weather CSV headers to standardized field names.
+        
+        Args:
+            headers: List of CSV header names
+            
+        Returns:
+            tuple: (mapping_dict, reasons_list)
+                mapping_dict: Maps standardized field names to actual header names
+                reasons_list: List of strings explaining why each field was recognized
+        """
+        mapping = {}
+        reasons = []
+        
+        # Check for timestamp field
+        timestamp_field = None
+        for ts_field in ['TIME_UTC_SECONDS', 'TIME', 'TIMESTAMP', 'ts_ms', 'UTC']:
+            if ts_field in headers:
+                timestamp_field = ts_field
+                mapping['ts'] = ts_field
+                reasons.append(f"Timestamp field found: '{ts_field}' mapped to 'ts'")
+                break
+        
+        if not timestamp_field:
+            reasons.append("No timestamp field found among expected: TIME_UTC_SECONDS, TIME, TIMESTAMP, ts_ms, UTC")
+        
+        # Check for weather data fields
+        weather_field_mapping = {
+            'temp': ['AIR_TEMP', 'AIR_TEMPERATURE'],
+            'humidity': ['HUMIDITY', 'HUMIDITY_PCT'],
+            'wind': ['WIND_SPEED', 'WIND']
+        }
+        
+        for field_key, possible_headers in weather_field_mapping.items():
+            found = False
+            for header in possible_headers:
+                if header in headers:
+                    mapping[field_key] = header
+                    reasons.append(f"Weather field '{field_key}' found: '{header}'")
+                    found = True
+                    break
+            
+            if not found:
+                reasons.append(f"Weather field '{field_key}' not found among expected: {', '.join(possible_headers)}")
+        
+        return mapping, reasons
+    
+    @classmethod
+    def inspect_text(cls, text: str) -> Dict[str, Any]:
+        """
+        Inspect weather CSV text to analyze headers and data structure.
+        
+        Args:
+            text: CSV text content to inspect
+            
+        Returns:
+            Dictionary with inspection results including headers, mapping, and reasons
+        """
+        import io
+        from typing import Any, Dict, Set
+        
+        # Auto-detect delimiter
+        delimiter = cls._detect_delimiter(text)
+        
+        # Read CSV data
+        text_io = io.StringIO(text)
+        reader = csv.DictReader(text_io, delimiter=delimiter)
+        rows = list(reader)
+        
+        # Get field names from CSV
+        headers = reader.fieldnames or []
+        
+        # Resolve columns using the new function
+        mapping, reasons = cls.resolve_columns(headers)
+        
+        # Count unique timestamps if timestamp field is found
+        timestamps = 0
+        if 'ts' in mapping:
+            timestamp_field = mapping['ts']
+            unique_timestamps: Set[str] = set()
+            for row in rows:
+                ts_value = row.get(timestamp_field, '').strip()
+                if ts_value:
+                    unique_timestamps.add(ts_value)
+            timestamps = len(unique_timestamps)
+        
+        return {
+            "header": headers,
+            "recognized": mapping,
+            "reasons": reasons,
+            "rows_total": len(rows),
+            "timestamps": timestamps
+        }

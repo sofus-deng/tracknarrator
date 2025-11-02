@@ -525,6 +525,61 @@ async def dev_inspect_trd_long(file: UploadFile = File(...)):
         )
 
 
+@app.post("/dev/inspect/weather")
+async def dev_inspect_weather(file: UploadFile = File(...)):
+    """
+    Inspect weather CSV file to diagnose field mappings.
+    
+    Args:
+        file: Weather CSV file to inspect
+        
+    Returns:
+        Dictionary with inspection results including headers, recognized mapping, and reasons
+    """
+    try:
+        # Read file content
+        content = await file.read()
+        text = content.decode("utf-8", errors="ignore")
+        
+        # Inspect the file using WeatherCSVImporter's methods
+        info = WeatherCSVImporter.inspect_text(text)
+        
+        # Extract the required fields from the inspection info
+        headers = info.get("header", [])
+        recognized = info.get("recognized", {})
+        reasons = info.get("reasons", [])
+        
+        return {
+            "status": "ok",
+            "inspect": {
+                "header": headers,
+                "recognized": recognized,
+                "reasons": reasons
+            }
+        }
+        
+    except HTTPException as he:
+        # Re-raise HTTP exceptions to be handled by the HTTP exception handler
+        raise
+    except (ValueError, AssertionError, ValidationError) as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "bad_input",
+                "source": "weather_inspect",
+                "message": str(e)
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "unexpected_error",
+                "message": str(e)
+            }
+        )
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     """Handle HTTP exceptions with consistent error format."""
