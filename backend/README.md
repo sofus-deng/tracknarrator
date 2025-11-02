@@ -101,3 +101,80 @@ Run tests with coverage:
 
 ```bash
 uv run pytest --cov=src/tracknarrator --cov-report=html
+```
+
+## Diagnostics
+
+### TRD CSV Inspector
+
+The API provides a diagnostic endpoint to inspect TRD CSV files and analyze channel mappings:
+
+```bash
+curl -X POST "http://localhost:8000/dev/inspect/trd-long" \
+  -F "file=@trd_telemetry.csv"
+```
+
+The inspector supports both the original TRD format and a simplified format:
+
+#### Supported Formats
+
+1. **Original TRD Format** (with timestamp and telemetry_name columns):
+```
+expire_at,lap,meta_event,meta_session,meta_source,meta_time,original_vehicle_id,outing,telemetry_name,telemetry_value,timestamp,vehicle_id,vehicle_number
+2025-04-04T18:10:23.456Z,1,session1,session1,trd,2025-04-04T18:10:23.456Z,123,1,speed,120.5,2025-04-04T18:10:23.456Z,1,1
+2025-04-04T18:10:23.456Z,1,session1,session1,trd,2025-04-04T18:10:23.456Z,123,1,aps,75.2,2025-04-04T18:10:23.456Z,1,1
+```
+
+2. **Simplified Format** (with ts_ms, name, value columns):
+```
+ts_ms,name,value
+0,speed,120.5
+0,aps,75.2
+0,pbrake_f,15.8
+0,gear,3
+```
+
+#### Field Name Synonyms
+
+The inspector automatically maps variant field names:
+
+- `vbox_long_min` → `VBOX_Long_Minutes`
+- `steering_angle` → `Steering_Angle`
+
+#### Sample Response
+
+```json
+{
+  "status": "ok",
+  "inspect": {
+    "recognized_channels": [
+      "Steering_Angle",
+      "VBOX_Long_Minutes",
+      "speed",
+      "aps",
+      "gear"
+    ],
+    "missing_expected": [
+      "accx_can",
+      "accy_can",
+      "pbrake_f",
+      "VBOX_Lat_Min"
+    ],
+    "unrecognized_names": [
+      "unknown_channel"
+    ],
+    "rows_total": 18,
+    "timestamps": 2,
+    "min_fields_per_ts": 9
+  }
+}
+```
+
+#### Response Fields
+
+- `recognized_channels`: Channels that match the expected TRD telemetry names
+- `missing_expected`: Expected channels that were not found in the file
+- `unrecognized_names`: Up to 20 unrecognized channel names found
+- `rows_total`: Total number of rows in the CSV
+- `timestamps`: Number of distinct timestamps found
+- `min_fields_per_ts`: Minimum number of fields per timestamp (indicates data completeness)

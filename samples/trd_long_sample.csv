@@ -1,0 +1,12 @@
+ts_ms,name,value
+0,speed,102
+0,aps,12
+0,gear,3
+0,accx_can,0.05
+0,accy_can,0.02
+0,Steering_Angle,5
+0,VBOX_Lat_Min,33.5200
+0,VBOX_Long_Minutes,-86.6200
+50,speed,105
+50,aps,18
+50,gear,3
