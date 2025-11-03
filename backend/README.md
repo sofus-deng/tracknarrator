@@ -76,6 +76,31 @@ curl -X POST "http://localhost:8000/ingest/weather?session_id=my-session" \
 - Supports both comma and semicolon delimiters
 - Encoding fallback: utf-8 → utf-8-sig → latin1
 - Accepts various header variants for weather fields
+- Enhanced field support: ts_ms, time_ms, timestamp_ms, ts, timestamp, utc, epoch, epoch_ms
+- Field normalization: temp_c/air_temp_c, wind_kph/wind_km_h/wind_mph, humidity_pct/humidity
+- Validation ranges: temp_c ∈ [-30, 60]°C, wind_kph ∈ [0, 250] kph, humidity_pct ∈ [0, 100]%
+- Row-level validation with detailed reasons for discarded rows
+
+#### Weather Inspection
+```bash
+curl -X POST "http://localhost:8000/dev/inspect/weather" \
+  -F "file=@weather.csv"
+```
+- Analyzes weather CSV structure and field mappings
+- Returns recognized headers, unrecognized names, row counts, and validation reasons
+- Sample response:
+```json
+{
+  "status": "ok",
+  "inspect": {
+    "recognized_headers": ["ts_ms", "temp_c", "wind_kph", "humidity_pct"],
+    "unrecognized_names": [],
+    "rows_total": 3,
+    "rows_accepted": 3,
+    "reasons": []
+  }
+}
+```
 
 ### Data Merge Strategy
 

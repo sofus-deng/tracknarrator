@@ -128,10 +128,10 @@ class TestWeatherCSVImporterAliases:
         result = WeatherCSVImporter.inspect_text(csv_content)
         
         assert result["header"] == ["utc_seconds", "temperature", "rh", "wind_mps"]
-        assert result["recognized"]["ts"] == "ts_ms"
-        assert result["recognized"]["temp"] == "temp_c"
-        assert result["recognized"]["humidity"] == "humidity_pct"
-        assert result["recognized"]["wind"] == "wind_kph"
+        assert result["recognized"]["ts"] == "utc_seconds"
+        assert result["recognized"]["temp"] == "temperature"
+        assert result["recognized"]["humidity"] == "rh"
+        assert result["recognized"]["wind"] == "wind_mps"
         assert result["rows_total"] == 2
         assert result["timestamps"] == 2
         assert any("seconds_to_ms" in reason for reason in result["reasons"])

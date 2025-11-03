@@ -62,7 +62,7 @@ class Telemetry(BaseModel):
 class WeatherPoint(BaseModel):
     """Weather data point model."""
     
-    session_id: str
+    session_id: Optional[str] = None
     ts_ms: int
     air_temp_c: Optional[float] = None
     track_temp_c: Optional[float] = None

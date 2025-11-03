@@ -539,22 +539,14 @@ async def dev_inspect_weather(file: UploadFile = File(...)):
     try:
         # Read file content
         content = await file.read()
-        text = content.decode("utf-8", errors="ignore")
+        file_obj = io.BytesIO(content)
         
-        # Inspect the file using WeatherCSVImporter's methods
-        info = WeatherCSVImporter.inspect_text(text)
-        
-        # Extract the required fields from the inspection info
-        headers = info.get("header", [])
-        recognized = info.get("recognized", {})
-        reasons = info.get("reasons", [])
+        # Inspect the file using new inspect_weather_csv function
+        info = WeatherCSVImporter.inspect_weather_csv(file_obj)
         
         return {
             "status": "ok",
-            "inspect": {
-                "headers": headers,
-                "recognized": recognized
-            }
+            "inspect": info
         }
         
     except HTTPException as he:

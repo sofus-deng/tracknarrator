@@ -67,6 +67,11 @@ class SessionStore:
         
         existing_bundle = self.sessions[session_id]
         
+        # Fill missing session_id in weather points
+        for weather_point in partial_bundle.weather:
+            if weather_point.session_id is None:
+                weather_point.session_id = session_id
+        
         # Merge laps
         lap_counts, lap_warnings = self._merge_laps(existing_bundle, partial_bundle.laps, src)
         counts.update(lap_counts)

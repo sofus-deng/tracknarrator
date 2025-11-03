@@ -16,11 +16,12 @@ class TestWeatherInspectAPI:
         # Clear store before each test
         store.sessions.clear()
     
-    def test_inspect_weather_with_ts(self):
-        """Test weather inspector with standard ts field."""
-        csv_content = """TIME_UTC_SECONDS,AIR_TEMP,TRACK_TEMP,HUMIDITY,PRESSURE,WIND_SPEED,WIND_DIRECTION,RAIN
-1722838223,25.5,35.2,65.0,1013.25,5.2,180.0,0
-1722838283,26.0,36.1,63.5,1013.15,4.8,175.5,0"""
+    def test_inspect_weather_ok_csv(self):
+        """Test weather inspector with weather_ok.csv format."""
+        csv_content = """ts_ms,temp_c,wind_kph,humidity_pct
+0,26,5,55
+3600000,27,6,60
+7200000,25,7,65"""
         
         response = self.client.post(
             "/dev/inspect/weather",
@@ -31,18 +32,21 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["headers"] == ["TIME_UTC_SECONDS", "AIR_TEMP", "TRACK_TEMP", "HUMIDITY", "PRESSURE", "WIND_SPEED", "WIND_DIRECTION", "RAIN"]
-        # Check standardized field mappings
-        assert inspect["recognized"]["ts"] == "ts_ms"
-        assert inspect["recognized"]["temp"] == "temp_c"
-        assert inspect["recognized"]["humidity"] == "humidity_pct"
-        assert inspect["recognized"]["wind"] == "wind_kph"
+        assert inspect["headers"] == ["ts_ms", "temp_c", "wind_kph", "humidity_pct"]
+        assert inspect["rows_total"] == 3
+        assert inspect["rows_accepted"] == 3
+        assert len(inspect["recognized_headers"]) == 4
+        assert "ts_ms" in inspect["recognized_headers"]
+        assert "temp_c" in inspect["recognized_headers"]
+        assert "wind_kph" in inspect["recognized_headers"]
+        assert "humidity_pct" in inspect["recognized_headers"]
     
-    def test_inspect_weather_with_ts_ms(self):
-        """Test weather inspector with ts_ms field."""
-        csv_content = """ts_ms,AIR_TEMPERATURE,HUMIDITY_PCT,WIND
-1722838223000,25.5,65.0,5.2
-1722838283000,26.0,63.5,4.8"""
+    def test_inspect_weather_utc_csv(self):
+        """Test weather inspector with weather_utc.csv format."""
+        csv_content = """utc,temp_c,wind_kph
+0,26,5
+3600,27,6
+7200,25,7"""
         
         response = self.client.post(
             "/dev/inspect/weather",
@@ -53,19 +57,18 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["headers"] == ["ts_ms", "AIR_TEMPERATURE", "HUMIDITY_PCT", "WIND"]
-        # Check standardized field mappings
-        assert inspect["recognized"]["ts"] == "ts_ms"
-        assert inspect["recognized"]["temp"] == "temp_c"
-        assert inspect["recognized"]["humidity"] == "humidity_pct"
-        assert inspect["recognized"]["wind"] == "wind_kph"
+        assert inspect["headers"] == ["utc", "temp_c", "wind_kph"]
+        assert inspect["rows_total"] == 3
+        assert inspect["rows_accepted"] == 3
+        assert "utc" in inspect["recognized_headers"]
+        assert "temp_c" in inspect["recognized_headers"]
+        assert "wind_kph" in inspect["recognized_headers"]
     
-    def test_inspect_weather_with_utc(self):
-        """Test weather inspector with UTC timestamp field."""
-        csv_content = """UTC,AIR_TEMP,HUMIDITY,WIND_SPEED
-1722838223,25.5,65.0,5.2
-1722838223,26.0,63.5,4.8
-1722838283,25.8,64.0,5.0"""
+    def test_inspect_weather_semicolon_csv(self):
+        """Test weather inspector with weather_semicolon.csv format."""
+        csv_content = """ts_ms;temp_c;wind_kph
+0;26;5
+3600000;27;6"""
         
         response = self.client.post(
             "/dev/inspect/weather",
@@ -76,18 +79,18 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["headers"] == ["UTC", "AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
-        # Check standardized field mappings
-        assert inspect["recognized"]["ts"] == "ts_ms"
-        assert inspect["recognized"]["temp"] == "temp_c"
-        assert inspect["recognized"]["humidity"] == "humidity_pct"
-        assert inspect["recognized"]["wind"] == "wind_kph"
+        assert inspect["headers"] == ["ts_ms", "temp_c", "wind_kph"]
+        assert inspect["rows_total"] == 2
+        assert inspect["rows_accepted"] == 2
+        assert "ts_ms" in inspect["recognized_headers"]
+        assert "temp_c" in inspect["recognized_headers"]
+        assert "wind_kph" in inspect["recognized_headers"]
     
-    def test_inspect_weather_with_semicolon_delimiter(self):
-        """Test weather inspector with semicolon delimiter."""
-        csv_content = """TIME_UTC_SECONDS;AIR_TEMP;HUMIDITY;WIND_SPEED
-1722838223;25.5;65.0;5.2
-1722838283;26.0;63.5;4.8"""
+    def test_inspect_weather_with_aliases(self):
+        """Test weather inspector with field aliases."""
+        csv_content = """ts,air_temp_c,wind_mph,humidity
+0,25.5,3.1,65
+3600,26.0,3.4,63"""
         
         response = self.client.post(
             "/dev/inspect/weather",
@@ -98,12 +101,19 @@ class TestWeatherInspectAPI:
         assert data["status"] == "ok"
         
         inspect = data["inspect"]
-        assert inspect["headers"] == ["TIME_UTC_SECONDS", "AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
-        # Check standardized field mappings
-        assert inspect["recognized"]["ts"] == "ts_ms"
-        assert inspect["recognized"]["temp"] == "temp_c"
-        assert inspect["recognized"]["humidity"] == "humidity_pct"
-        assert inspect["recognized"]["wind"] == "wind_kph"
+        assert inspect["headers"] == ["ts", "air_temp_c", "wind_mph", "humidity"]
+        assert inspect["rows_total"] == 2
+        assert inspect["rows_accepted"] == 2
+        assert "ts" in inspect["recognized_headers"]
+        assert "air_temp_c" in inspect["recognized_headers"]
+        assert "wind_mph" in inspect["recognized_headers"]
+        assert "humidity" in inspect["recognized_headers"]
+        
+        # Check for alias usage warnings
+        reasons = inspect.get("reasons", [])
+        assert any("alias_used: air_temp_c→temp_c" in reason for reason in reasons)
+        assert any("alias_used: wind_mph→wind_kph" in reason for reason in reasons)
+        # Note: "humidity" is a canonical name, not an alias, so no warning expected
     
     def test_inspect_weather_empty_file(self):
         """Test weather inspector with empty file."""
@@ -160,10 +170,10 @@ just,some,random,text"""
         inspect = data["inspect"]
         assert inspect["headers"] == ["AIR_TEMP", "HUMIDITY", "WIND_SPEED"]
         # Should still recognize weather fields but no timestamp
-        assert "ts" not in inspect["recognized"]
-        assert inspect["recognized"]["temp"] == "temp_c"
-        assert inspect["recognized"]["humidity"] == "humidity_pct"
-        assert inspect["recognized"]["wind"] == "wind_kph"
+        assert "ts_ms" not in inspect["recognized"]
+        assert inspect["recognized"]["temp_c"] == "AIR_TEMP"
+        assert inspect["recognized"]["humidity_pct"] == "HUMIDITY"
+        assert inspect["recognized"]["wind_kph"] == "WIND_SPEED"
     
     def test_inspect_weather_partial_fields(self):
         """Test weather inspector with only some weather fields."""
@@ -182,8 +192,8 @@ just,some,random,text"""
         inspect = data["inspect"]
         assert inspect["headers"] == ["TIME_UTC_SECONDS", "AIR_TEMP"]
         # Check standardized field mappings
-        assert inspect["recognized"]["ts"] == "ts_ms"
-        assert inspect["recognized"]["temp"] == "temp_c"
+        assert inspect["recognized"]["ts_ms"] == "TIME_UTC_SECONDS"
+        assert inspect["recognized"]["temp_c"] == "AIR_TEMP"
         # Should not have humidity or wind fields
-        assert "humidity" not in inspect["recognized"]
-        assert "wind" not in inspect["recognized"]
+        assert "humidity_pct" not in inspect["recognized"]
+        assert "wind_kph" not in inspect["recognized"]

@@ -1,4 +1,4 @@
-"""Weather CSV importer with semicolon delimiter support."""
+"""Weather CSV importer with enhanced field support and validation."""
 
 import csv
 import io
@@ -10,24 +10,59 @@ from ..utils_time import safe_int
 
 
 class WeatherCSVImporter:
-    """Importer for weather data CSV files."""
+    """Importer for weather data CSV files with enhanced field support."""
     
-    # Header mapping for weather data
+    # Header mapping for weather data (legacy - kept for backward compatibility)
     HEADER_MAP = {
         'TIME_UTC_SECONDS': 'ts_seconds',
+        'TIME': 'ts_seconds',
         'AIR_TEMP': 'air_temp_c',
-        'TRACK_TEMP': 'track_temp_c', 
+        'AIR_TEMPERATURE': 'air_temp_c',
+        'TRACK_TEMP': 'track_temp_c',
+        'TRACK_TEMPERATURE': 'track_temp_c',
         'HUMIDITY': 'humidity_pct',
+        'HUMIDITY_PCT': 'humidity_pct',
         'PRESSURE': 'pressure_hpa',
+        'PRESSURE_HPA': 'pressure_hpa',
         'WIND_SPEED': 'wind_speed',
+        'WIND': 'wind_speed',
         'WIND_DIRECTION': 'wind_dir_deg',
-        'RAIN': 'rain_flag'
+        'WIND_DIR': 'wind_dir_deg',
+        'RAIN': 'rain_flag',
+        'RAIN_FLAG': 'rain_flag'
+    }
+    
+    # Enhanced field mappings with canonical names and aliases
+    FIELD_MAPPINGS = {
+        # Timestamp fields (all map to 'ts')
+        'ts': ['ts_ms', 'time_ms', 'timestamp_ms', 'ts', 'timestamp', 'utc', 'epoch', 'epoch_ms', 'utc_seconds', 'time_s', 'TIME_UTC_SECONDS', 'TIME'],
+        # Temperature fields (canonical: temp)
+        'temp': ['temp', 'temp_c', 'air_temp_c', 'AIR_TEMP', 'AIR_TEMPERATURE', 'temperature'],
+        # Track temperature fields (canonical: track_temp)
+        'track_temp': ['track_temp', 'track_temp_c', 'TRACK_TEMP', 'TRACK_TEMPERATURE'],
+        # Wind fields (canonical: wind)
+        'wind': ['wind', 'wind_kph', 'wind_km_h', 'wind_mph', 'wind_mps', 'WIND_SPEED', 'WIND', 'wind_speed_kph'],
+        # Humidity fields (canonical: humidity)
+        'humidity': ['humidity', 'humidity_pct', 'HUMIDITY', 'HUMIDITY_PCT', 'rh', 'relative_humidity'],
+        # Pressure fields (canonical: pressure)
+        'pressure': ['pressure', 'pressure_hpa', 'PRESSURE', 'PRESSURE_HPA'],
+        # Wind direction fields (canonical: wind_dir)
+        'wind_dir': ['wind_dir', 'wind_dir_deg', 'WIND_DIRECTION', 'WIND_DIR'],
+        # Rain flag fields (canonical: rain)
+        'rain': ['rain', 'rain_flag', 'RAIN', 'RAIN_FLAG']
+    }
+    
+    # Field validation ranges
+    VALIDATION_RANGES = {
+        'temp': {'min': -30, 'max': 60},
+        'wind': {'min': 0, 'max': 250},
+        'humidity': {'min': 0, 'max': 100}
     }
     
     @classmethod
     def import_file(cls, file: BinaryIO | TextIO, session_id: str) -> ImportResult:
         """
-        Import weather CSV file.
+        Import weather CSV file with enhanced validation and row-level reasons.
         
         Args:
             file: File-like object containing CSV data
@@ -37,6 +72,7 @@ class WeatherCSVImporter:
             ImportResult with weather data and any warnings
         """
         warnings = []
+        discard_reasons = []
         
         try:
             # Handle both binary and text files with encoding fallback
@@ -55,32 +91,50 @@ class WeatherCSVImporter:
             if not rows:
                 return ImportResult.failure(["Empty CSV file"])
             
-            # Check if we have any valid weather headers using the new alias resolution
+            # Get field names from CSV
             fieldnames = reader.fieldnames or []
-            resolved = cls.resolve_weather_columns(fieldnames)
+            normalized_fieldnames = [h.strip('\ufeff').strip() for h in fieldnames]
+            
+            # Resolve columns using the new function
+            resolved = cls.resolve_weather_columns(normalized_fieldnames)
             
             # Check if we have at least a timestamp and one weather field
             has_valid_timestamp = "ts" in resolved
             has_weather_data = any(field in resolved for field in ["temp", "humidity", "wind"])
             
+            # If no valid fields with new mappings, try legacy headers
             if not has_valid_timestamp or not has_weather_data:
-                return ImportResult.failure(["No valid weather data found"])
+                # Normalize legacy headers
+                normalized_legacy_headers = [h.strip('\ufeff').strip() for h in fieldnames]
+                legacy_found = False
+                for legacy_header, standard_field in cls.HEADER_MAP.items():
+                    if legacy_header in normalized_legacy_headers:
+                        legacy_found = True
+                        break
+                
+                if legacy_found:
+                    # Use legacy processing
+                    return cls._import_with_legacy_headers(reader, session_id, delimiter)
+                else:
+                    return ImportResult.failure([f"No valid weather data found. Headers seen: {fieldnames}"])
             
             # Process rows to create weather points
             weather_points = []
             
             for row_num, row in enumerate(rows, 1):
                 try:
-                    weather_point, row_warnings = cls._process_row(row, session_id, row_num)
+                    weather_point, row_warnings, discard_reason = cls._process_row(row, session_id, row_num)
+                    if discard_reason:
+                        discard_reasons.append(discard_reason)
                     if weather_point:
                         weather_points.append(weather_point)
                     warnings.extend(row_warnings)
                 except Exception as e:
-                    warnings.append(f"Row {row_num}: Error processing row: {e}")
+                    discard_reasons.append(f"row {row_num}: error processing row: {e}")
                     continue
             
             if not weather_points:
-                return ImportResult.failure(["No valid weather data found"])
+                return ImportResult.failure([f"Import failed: {'; '.join(discard_reasons)}"])
             
             # Create session and bundle
             session = Session(
@@ -94,14 +148,198 @@ class WeatherCSVImporter:
                 weather=weather_points
             )
             
+            # Add discard reasons to warnings if any
+            if discard_reasons:
+                warnings.extend(discard_reasons)
+            
             return ImportResult.success(bundle, warnings)
             
         except Exception as e:
             return ImportResult.failure([f"Error processing weather CSV: {str(e)}"])
     
     @classmethod
-    def _process_row(cls, row: Dict[str, str], session_id: str, row_num: int) -> tuple[WeatherPoint | None, List[str]]:
-        """Process a single weather data row."""
+    def _import_with_legacy_headers(cls, reader: csv.DictReader, session_id: str, delimiter: str) -> ImportResult:
+        """
+        Import using legacy header mappings for backward compatibility.
+        """
+        rows = list(reader)
+        weather_points = []
+        all_warnings = []
+        discard_reasons = []
+        
+        for row_num, row in enumerate(rows, 1):
+            weather_point, warnings, discard_reason = cls._process_legacy_row(row, session_id, row_num)
+            all_warnings.extend(warnings)
+            
+            if discard_reason:
+                discard_reasons.append(discard_reason)
+                continue
+                
+            if weather_point:
+                weather_points.append(weather_point)
+        
+        # If no valid weather points, return error
+        if not weather_points:
+            # If no discard reasons, provide a generic message
+            if not discard_reasons:
+                discard_reasons.append("No valid weather data found")
+            return ImportResult.failure([f"Import failed: {'; '.join(discard_reasons)}"])
+        
+        # Create session and bundle
+        session = Session(
+            id=session_id,
+            source="weather_csv",
+            track_id="unknown",  # Will be updated by other importers
+        )
+        
+        bundle = SessionBundle(
+            session=session,
+            weather=weather_points
+        )
+        
+        # Add discard reasons to warnings if any
+        if discard_reasons:
+            all_warnings.extend(discard_reasons)
+        
+        return ImportResult.success(bundle, all_warnings)
+    
+    @classmethod
+    def _process_legacy_row(cls, row: Dict[str, str], session_id: str, row_num: int) -> tuple[WeatherPoint | None, List[str], str | None]:
+        """
+        Process a single row using legacy header mappings.
+        """
+        warnings = []
+        weather_data = {"session_id": session_id}
+        valid_fields_found = False
+        
+        # Process timestamp
+        timestamp_value = None
+        for legacy_header, standard_field in cls.HEADER_MAP.items():
+            if standard_field == "ts_seconds" and legacy_header in row:
+                timestamp_raw = row[legacy_header].strip()
+                timestamp_value = coerce_float(timestamp_raw)
+                if timestamp_value is not None:
+                    # Convert to milliseconds
+                    weather_data["ts_ms"] = int(timestamp_value * 1000)
+                    valid_fields_found = True
+                else:
+                    warnings.append(f"row {row_num}: invalid timestamp")
+                break
+        
+        if timestamp_value is None:
+            return None, warnings, f"row {row_num}: missing/invalid timestamp"
+        
+        # Process other fields
+        for legacy_header, standard_field in cls.HEADER_MAP.items():
+            if legacy_header in row and standard_field != "ts_seconds":
+                raw_value = row[legacy_header].strip()
+                if not raw_value:
+                    continue
+                    
+                if standard_field in ["air_temp_c", "track_temp_c", "AIR_TEMP", "AIR_TEMPERATURE", "TRACK_TEMP", "TRACK_TEMPERATURE"]:
+                    value = coerce_float(raw_value)
+                    if value is not None:
+                        # Normalize to standard field names
+                        if standard_field in ["AIR_TEMP", "AIR_TEMPERATURE"]:
+                            weather_data["air_temp_c"] = value
+                        elif standard_field in ["TRACK_TEMP", "TRACK_TEMPERATURE"]:
+                            weather_data["track_temp_c"] = value
+                        else:
+                            weather_data[standard_field] = value
+                        valid_fields_found = True
+                        
+                        # Apply validation ranges for legacy processing (after storing the value)
+                        if standard_field in ["air_temp_c", "AIR_TEMP", "AIR_TEMPERATURE"] and not (-50 <= value <= 60):
+                            warnings.append(f"Air temperature {value}°C outside reasonable range")
+                        elif standard_field in ["track_temp_c", "TRACK_TEMP", "TRACK_TEMPERATURE"] and not (-50 <= value <= 80):
+                            warnings.append(f"Track temperature {value}°C outside reasonable range")
+                    else:
+                        warnings.append(f"row {row_num}: invalid {standard_field} value")
+                elif standard_field in ["humidity_pct", "HUMIDITY", "HUMIDITY_PCT"]:
+                    value = coerce_float(raw_value)
+                    if value is not None:
+                        weather_data["humidity_pct"] = value
+                        valid_fields_found = True
+                        
+                        # Apply validation ranges for legacy processing (after storing the value)
+                        if not (0 <= value <= 100):
+                            warnings.append(f"Humidity {value}% outside 0-100% range")
+                    else:
+                        warnings.append(f"row {row_num}: invalid humidity value")
+                elif standard_field in ["pressure_hpa", "PRESSURE", "PRESSURE_HPA"]:
+                    value = coerce_float(raw_value)
+                    if value is not None:
+                        weather_data["pressure_hpa"] = value
+                        valid_fields_found = True
+                        
+                        # Apply validation ranges for legacy processing (after storing the value)
+                        if not (800 <= value <= 1200):
+                            warnings.append(f"Pressure {value} hPa outside reasonable range")
+                    else:
+                        warnings.append(f"row {row_num}: invalid pressure value")
+                elif standard_field in ["wind_speed", "WIND_SPEED", "WIND"]:
+                    value = coerce_float(raw_value)
+                    if value is not None:
+                        weather_data["wind_speed"] = value
+                        valid_fields_found = True
+                        
+                        # Apply validation ranges for legacy processing (after storing the value)
+                        if value < 0:
+                            warnings.append(f"Wind speed cannot be negative")
+                        elif value > 200:
+                            warnings.append(f"Wind speed {value} km/h outside reasonable range")
+                    else:
+                        warnings.append(f"row {row_num}: invalid wind value")
+                elif standard_field in ["wind_dir_deg", "WIND_DIRECTION", "WIND_DIR"]:
+                    value = coerce_float(raw_value)
+                    if value is not None:
+                        weather_data["wind_dir_deg"] = value
+                        valid_fields_found = True
+                        
+                        # Apply validation ranges for legacy processing (after storing the value)
+                        if not (0 <= value <= 360):
+                            warnings.append(f"Wind direction {value}° outside 0-360° range")
+                    else:
+                        warnings.append(f"row {row_num}: invalid wind direction value")
+                elif standard_field in ["rain_flag", "RAIN", "RAIN_FLAG"]:
+                    value = coerce_int(raw_value)
+                    if value is not None:
+                        weather_data["rain_flag"] = value
+                        valid_fields_found = True
+                        
+                        # Apply validation ranges for legacy processing (after storing the value)
+                        if value not in [0, 1]:
+                            warnings.append(f"Rain flag should be 0 or 1, got {value}")
+                    else:
+                        warnings.append(f"row {row_num}: invalid rain flag value")
+        
+        # Initialize all fields to None if not set
+        for field in ['air_temp_c', 'track_temp_c', 'humidity_pct', 'pressure_hpa', 'wind_speed', 'wind_dir_deg', 'rain_flag']:
+            if field not in weather_data:
+                weather_data[field] = None
+        
+        # For legacy processing, we accept rows with just timestamp
+        # (different from new field processing which requires at least one weather field)
+        if not valid_fields_found:
+            # For legacy processing, we still create a weather point even if no valid weather fields
+            # This is to maintain backward compatibility
+            pass
+        
+        # Create weather point
+        weather_point = WeatherPoint(**weather_data)
+        return weather_point, warnings, None
+    
+    @classmethod
+    def _process_row(cls, row: Dict[str, str], session_id: str, row_num: int) -> tuple[WeatherPoint | None, List[str], str | None]:
+        """
+        Process a single weather data row with enhanced validation.
+        
+        Returns:
+            tuple: (weather_point, warnings, discard_reason)
+            - weather_point: Valid WeatherPoint or None if row discarded
+            - warnings: List of warning messages
+            - discard_reason: Reason for discarding row, or None if accepted
+        """
         warnings = []
         
         # Get all headers from the row
@@ -110,116 +348,219 @@ class WeatherCSVImporter:
         # Resolve column mappings with aliases
         resolved = cls.resolve_weather_columns(headers)
         
-        # Process timestamp
+        # Process timestamp (hard requirement)
         if "ts" not in resolved:
-            warnings.append("Missing timestamp")
-            return None, warnings
+            return None, [], f"row {row_num}: missing timestamp field"
         
         ts_info = resolved["ts"]
         ts_raw = row[ts_info["header"]].strip()
         if not ts_raw:
-            warnings.append("Missing timestamp")
-            return None, warnings
+            return None, [], f"row {row_num}: missing/invalid timestamp"
         
         ts_value = coerce_float(ts_raw)
-        if ts_value is None:
-            warnings.append("Invalid timestamp")
-            return None, warnings
+        if ts_value is None or ts_value < 0:
+            return None, [], f"row {row_num}: missing/invalid timestamp"
         
-        # Apply timestamp conversion
+        # Apply timestamp conversion with auto-detection
         if ts_info["conversion"] == "seconds_to_ms":
             ts_ms = int(ts_value * 1000)
         elif ts_info["conversion"] == "none":
             ts_ms = int(ts_value)
         else:
-            warnings.append(f"Unknown timestamp conversion: {ts_info['conversion']}")
-            return None, warnings
+            return None, [], f"row {row_num}: unknown timestamp conversion: {ts_info['conversion']}"
         
-        # Extract and convert weather fields
-        air_temp_c = None
-        track_temp_c = None
-        humidity_pct = None
-        pressure_hpa = None
-        wind_speed = None
-        wind_dir_deg = None
-        rain_flag = None
-        
-        # Temperature
-        if "temp" in resolved:
-            temp_info = resolved["temp"]
-            temp_raw = row[temp_info["header"]].strip()
-            air_temp_c = coerce_float(temp_raw)
-        
-        # Track temperature (if available)
-        track_temp_headers = ['TRACK_TEMP', 'TRACK_TEMPERATURE']
-        for header in track_temp_headers:
-            if header in row:
-                track_temp_raw = row[header].strip()
-                track_temp_c = coerce_float(track_temp_raw)
-                break
-        
-        # Humidity
-        if "humidity" in resolved:
-            humidity_info = resolved["humidity"]
-            humidity_raw = row[humidity_info["header"]].strip()
-            humidity_pct = coerce_float(humidity_raw)
-        
-        # Pressure (if available)
-        pressure_headers = ['PRESSURE', 'PRESSURE_HPA']
-        for header in pressure_headers:
-            if header in row:
-                pressure_raw = row[header].strip()
-                pressure_hpa = coerce_float(pressure_raw)
-                break
-        
-        # Wind speed with conversion
-        if "wind" in resolved:
-            wind_info = resolved["wind"]
-            wind_raw = row[wind_info["header"]].strip()
-            wind_value = coerce_float(wind_raw)
-            if wind_value is not None:
-                if wind_info["conversion"] == "mps_to_kph":
-                    wind_speed = wind_value * 3.6  # Convert m/s to kph
-                elif wind_info["conversion"] == "none":
-                    wind_speed = wind_value
-                else:
-                    warnings.append(f"Unknown wind conversion: {wind_info['conversion']}")
-        
-        # Wind direction (if available)
-        wind_dir_headers = ['WIND_DIRECTION', 'WIND_DIR']
-        for header in wind_dir_headers:
-            if header in row:
-                wind_dir_raw = row[header].strip()
-                wind_dir_deg = coerce_float(wind_dir_raw)
-                break
-        
-        # Rain flag (if available)
-        rain_headers = ['RAIN', 'RAIN_FLAG']
-        for header in rain_headers:
-            if header in row:
-                rain_raw = row[header].strip()
-                rain_flag = coerce_int(rain_raw)
-                break
-        
-        # Convert and validate fields
+        # Initialize weather data with session_id and timestamp
         weather_data = {
             'session_id': session_id,
             'ts_ms': ts_ms,
-            'air_temp_c': air_temp_c,
-            'track_temp_c': track_temp_c,
-            'humidity_pct': humidity_pct,
-            'pressure_hpa': pressure_hpa,
-            'wind_speed': wind_speed,
-            'wind_dir_deg': wind_dir_deg,
-            'rain_flag': rain_flag
+            'air_temp_c': None,
+            'track_temp_c': None,
+            'humidity_pct': None,
+            'pressure_hpa': None,
+            'wind_speed': None,
+            'wind_dir_deg': None,
+            'rain_flag': None
         }
         
-        # Validate ranges and add warnings if needed
-        cls._validate_weather_data(weather_data, row_num, warnings)
+        # Track if any valid weather fields are found
+        valid_fields_found = False
+        
+        # Process temperature field (canonical: temp)
+        if "temp" in resolved:
+            temp_info = resolved["temp"]
+            temp_raw = row[temp_info["header"]].strip()
+            # Remove comments after values (e.g., "55  # comment")
+            if '  #' in temp_raw:
+                temp_raw = temp_raw.split('  #')[0].strip()
+            temp_value = coerce_float(temp_raw)
+            
+            if temp_value is not None:
+                # Store value even if out of range (with warning)
+                weather_data['air_temp_c'] = temp_value
+                valid_fields_found = True
+                
+                # Validate range and warn if out of range
+                range_info = cls.VALIDATION_RANGES['temp']
+                if not (range_info['min'] <= temp_value <= range_info['max']):
+                    warnings.append(f"row {row_num}: out-of-range temp {temp_value}C")
+            else:
+                warnings.append(f"row {row_num}: invalid temp value")
+                weather_data['air_temp_c'] = None
+            
+            # Add alias warning if used
+            if temp_info.get("alias_used"):
+                warnings.append(f"row {row_num}: alias_used: {temp_info['header']}→temp_c")
+        
+        # Process wind field (canonical: wind)
+        if "wind" in resolved:
+            wind_info = resolved["wind"]
+            wind_raw = row[wind_info["header"]].strip()
+            # Remove comments after values (e.g., "55  # comment")
+            if '  #' in wind_raw:
+                wind_raw = wind_raw.split('  #')[0].strip()
+            wind_value = coerce_float(wind_raw)
+            
+            if wind_value is not None:
+                # Apply conversion if needed
+                if wind_info["conversion"] == "mph_to_kph":
+                    wind_value = wind_value * 1.60934
+                elif wind_info["conversion"] == "mps_to_kph":
+                    wind_value = wind_value * 3.6
+                
+                # Store value even if out of range (with warning)
+                weather_data['wind_speed'] = wind_value
+                valid_fields_found = True
+                
+                # Validate range and warn if out of range
+                range_info = cls.VALIDATION_RANGES['wind']
+                if not (range_info['min'] <= wind_value <= range_info['max']):
+                    if wind_value < 0:
+                        warnings.append(f"row {row_num}: out-of-range wind {wind_value:.0f}kph (negative)")
+                    else:
+                        warnings.append(f"row {row_num}: out-of-range wind {wind_value:.0f}kph")
+            else:
+                warnings.append(f"row {row_num}: invalid wind value")
+                weather_data['wind_speed'] = None
+            
+            # Add alias warning if used
+            if wind_info.get("alias_used"):
+                warnings.append(f"row {row_num}: alias_used: {wind_info['header']}→wind_kph")
+        
+        # Process humidity field (canonical: humidity)
+        if "humidity" in resolved:
+            humidity_info = resolved["humidity"]
+            humidity_raw = row[humidity_info["header"]].strip()
+            # Remove comments after values (e.g., "55  # comment")
+            if '  #' in humidity_raw:
+                humidity_raw = humidity_raw.split('  #')[0].strip()
+            humidity_value = coerce_float(humidity_raw)
+            
+            if humidity_value is not None:
+                # Store value even if out of range (with warning)
+                weather_data['humidity_pct'] = humidity_value
+                valid_fields_found = True
+                
+                # Validate range and warn if out of range
+                range_info = cls.VALIDATION_RANGES['humidity']
+                if not (range_info['min'] <= humidity_value <= range_info['max']):
+                    warnings.append(f"row {row_num}: out-of-range humidity {humidity_value}%")
+            else:
+                warnings.append(f"row {row_num}: invalid humidity value")
+                weather_data['humidity_pct'] = None
+            
+            # Add alias warning if used
+            if humidity_info.get("alias_used"):
+                warnings.append(f"row {row_num}: alias_used: {humidity_info['header']}→humidity_pct")
+        
+        # Process track temperature field (canonical: track_temp)
+        if "track_temp" in resolved:
+            track_temp_info = resolved["track_temp"]
+            track_temp_raw = row[track_temp_info["header"]].strip()
+            track_temp_value = coerce_float(track_temp_raw)
+            
+            if track_temp_value is not None:
+                # Validate range (track temp has wider range)
+                if -50 <= track_temp_value <= 80:
+                    weather_data['track_temp_c'] = track_temp_value
+                    valid_fields_found = True
+                else:
+                    warnings.append(f"Row {row_num}: Track temperature {track_temp_value}°C outside reasonable range")
+            else:
+                warnings.append(f"row {row_num}: invalid track_temp value")
+            
+            # Add alias warning if used
+            if track_temp_info.get("alias_used"):
+                warnings.append(f"row {row_num}: alias_used: {track_temp_info['header']}→track_temp")
+        
+        # Process pressure field (canonical: pressure)
+        if "pressure" in resolved:
+            pressure_info = resolved["pressure"]
+            pressure_raw = row[pressure_info["header"]].strip()
+            pressure_value = coerce_float(pressure_raw)
+            
+            if pressure_value is not None:
+                # Validate range
+                if 800 <= pressure_value <= 1200:
+                    weather_data['pressure_hpa'] = pressure_value
+                    valid_fields_found = True
+                else:
+                    warnings.append(f"Row {row_num}: Pressure {pressure_value} hPa outside reasonable range")
+            else:
+                warnings.append(f"row {row_num}: invalid pressure value")
+            
+            # Add alias warning if used
+            if pressure_info.get("alias_used"):
+                warnings.append(f"row {row_num}: alias_used: {pressure_info['header']}→pressure")
+        
+        # Process wind direction field (canonical: wind_dir)
+        if "wind_dir" in resolved:
+            wind_dir_info = resolved["wind_dir"]
+            wind_dir_raw = row[wind_dir_info["header"]].strip()
+            wind_dir_value = coerce_float(wind_dir_raw)
+            
+            if wind_dir_value is not None:
+                # Validate range
+                if 0 <= wind_dir_value <= 360:
+                    weather_data['wind_dir_deg'] = wind_dir_value
+                    valid_fields_found = True
+                else:
+                    warnings.append(f"Row {row_num}: Wind direction {wind_dir_value}° outside 0-360° range")
+            else:
+                warnings.append(f"row {row_num}: invalid wind direction value")
+            
+            # Add alias warning if used
+            if wind_dir_info.get("alias_used"):
+                warnings.append(f"row {row_num}: alias_used: {wind_dir_info['header']}→wind_dir")
+        
+        # Process rain flag field (canonical: rain)
+        if "rain" in resolved:
+            rain_info = resolved["rain"]
+            rain_raw = row[rain_info["header"]].strip()
+            rain_value = coerce_int(rain_raw)
+            
+            if rain_value is not None:
+                # Validate range
+                if rain_value in [0, 1]:
+                    weather_data['rain_flag'] = rain_value
+                    valid_fields_found = True
+                else:
+                    warnings.append(f"Row {row_num}: Rain flag should be 0 or 1, got {rain_value}")
+            else:
+                warnings.append(f"row {row_num}: invalid rain flag value")
+            
+            # Add alias warning if used
+            if rain_info.get("alias_used"):
+                warnings.append(f"row {row_num}: alias_used: {rain_info['header']}→rain")
+        
+        # Check if any valid weather fields were found
+        # For backward compatibility, we only discard rows if no timestamp
+        # or if ALL weather fields are invalid (not just out of range)
+        if not valid_fields_found:
+            return None, warnings, f"row {row_num}: no valid weather fields"
         
         # Create weather point
         weather_point = WeatherPoint(**weather_data)
-        return weather_point, warnings
+        return weather_point, warnings, None
     
     @classmethod
     def _find_header_value(cls, row: Dict[str, str], possible_headers: List[str]) -> str:
@@ -324,7 +665,7 @@ class WeatherCSVImporter:
     @classmethod
     def resolve_weather_columns(cls, headers: list[str]) -> dict:
         """
-        Resolve weather CSV headers to standardized field names with alias support.
+        Resolve weather CSV headers to standardized field names with enhanced alias support.
         
         Args:
             headers: List of CSV header names
@@ -333,68 +674,67 @@ class WeatherCSVImporter:
             dict: Maps standardized field names to actual header names and conversion info
                 Format: {
                     "ts": {"header": "actual_header", "conversion": "seconds_to_ms"},
-                    "temp": {"header": "actual_header", "conversion": "none"},
-                    "humidity": {"header": "actual_header", "conversion": "none"},
-                    "wind": {"header": "actual_header", "conversion": "mps_to_kph"}
+                    "temp": {"header": "actual_header", "conversion": "none", "alias_used": True},
+                    "wind": {"header": "actual_header", "conversion": "mph_to_kph", "alias_used": True},
+                    "humidity": {"header": "actual_header", "conversion": "none"}
                 }
         """
-        # Define all supported aliases for each field
-        alias_map = {
-            "ts": ["ts_ms", "utc", "utc_seconds", "timestamp", "time_s", "time_ms", "TIME_UTC_SECONDS", "TIME", "TIMESTAMP"],
-            "temp": ["temp", "temp_c", "temperature", "air_temp_c", "AIR_TEMP", "AIR_TEMPERATURE"],
-            "humidity": ["humidity", "humidity_pct", "rh", "relative_humidity", "HUMIDITY", "HUMIDITY_PCT"],
-            "wind": ["wind", "wind_kph", "wind_speed_kph", "wind_mps", "WIND_SPEED", "WIND"]
-        }
-        
-        # Define conversions needed for each alias
-        conversion_map = {
-            "ts_ms": "none",
-            "utc": "seconds_to_ms",
-            "utc_seconds": "seconds_to_ms",
-            "timestamp": "seconds_to_ms",
-            "time_s": "seconds_to_ms",
-            "time_ms": "none",
-            "TIME_UTC_SECONDS": "seconds_to_ms",
-            "TIME": "seconds_to_ms",
-            "TIMESTAMP": "seconds_to_ms",
-            "temp": "none",
-            "temp_c": "none",
-            "temperature": "none",
-            "air_temp_c": "none",
-            "AIR_TEMP": "none",
-            "AIR_TEMPERATURE": "none",
-            "humidity": "none",
-            "humidity_pct": "none",
-            "rh": "none",
-            "relative_humidity": "none",
-            "HUMIDITY": "none",
-            "HUMIDITY_PCT": "none",
-            "wind": "none",
-            "wind_kph": "none",
-            "wind_speed_kph": "none",
-            "wind_mps": "mps_to_kph",
-            "WIND_SPEED": "none",
-            "WIND": "none"
-        }
-        
         result = {}
         
-        # For each field type, find the matching header
-        for field_type, aliases in alias_map.items():
+        # For each canonical field, find the matching header
+        for canonical_field, aliases in cls.FIELD_MAPPINGS.items():
             for alias in aliases:
                 # Case-insensitive matching
                 matching_headers = [h for h in headers if h.lower() == alias.lower()]
                 if matching_headers:
                     # Use the first match
                     actual_header = matching_headers[0]
-                    conversion = conversion_map.get(alias, "none")
-                    result[field_type] = {
+                    
+                    # Determine conversion
+                    conversion = cls._determine_conversion(canonical_field, alias)
+                    
+                    # Check if alias is used (not canonical)
+                    alias_used = alias.lower() != canonical_field.lower()
+                    
+                    result[canonical_field] = {
                         "header": actual_header,
-                        "conversion": conversion
+                        "conversion": conversion,
+                        "alias_used": alias_used
                     }
                     break
         
         return result
+    
+    @classmethod
+    def _determine_conversion(cls, canonical_field: str, alias: str) -> str:
+        """Determine conversion needed for a field alias."""
+        alias_lower = alias.lower()
+        canonical_lower = canonical_field.lower()
+        
+        # Timestamp conversions
+        if canonical_lower == "ts":
+            if alias_lower.endswith("_ms"):
+                return "none"  # Already in milliseconds
+            elif alias_lower.endswith("_seconds"):
+                return "seconds_to_ms"  # Convert seconds to milliseconds
+            elif alias_lower.endswith("_s"):
+                return "seconds_to_ms"  # Convert seconds to milliseconds
+            elif alias_lower in ["utc", "utc_seconds"]:
+                return "seconds_to_ms"  # Convert UTC seconds to milliseconds (normalized)
+            else:
+                return "seconds_to_ms"  # Default to seconds to milliseconds
+        
+        # Wind speed conversions
+        if canonical_lower == "wind":
+            if alias_lower.endswith("_mph"):
+                return "mph_to_kph"  # Convert mph to kph
+            elif alias_lower.endswith("_mps"):
+                return "mps_to_kph"  # Convert m/s to kph
+            else:
+                return "none"  # Already in kph or km/h
+        
+        # No conversion needed for other fields
+        return "none"
     
     @classmethod
     def resolve_columns(cls, headers: list[str]) -> tuple[dict, list[str]]:
@@ -433,6 +773,116 @@ class WeatherCSVImporter:
         return mapping, reasons
     
     @classmethod
+    def inspect_weather_csv(cls, file: BinaryIO | TextIO) -> Dict[str, Any]:
+        """
+        Inspect weather CSV file to analyze headers and data structure.
+        
+        Args:
+            file: File-like object containing CSV data
+            
+        Returns:
+            Dictionary with inspection results:
+            {
+                "headers": [...],
+                "recognized": {...},
+                "reasons": [...],
+                "rows_total": N,
+                "rows_accepted": M,
+                "timestamps": T
+            }
+        """
+        try:
+            # Handle both binary and text files with encoding fallback
+            content, encoding_used = cls._read_file_with_encoding_fallback(file)
+            if content is None:
+                return {
+                    "headers": [],
+                    "recognized": {},
+                    "reasons": ["Failed to read file with any supported encoding"],
+                    "rows_total": 0,
+                    "rows_accepted": 0,
+                    "timestamps": 0
+                }
+            
+            # Auto-detect delimiter
+            delimiter = cls._detect_delimiter(content)
+            
+            # Read CSV data
+            text_io = io.StringIO(content)
+            reader = csv.DictReader(text_io, delimiter=delimiter)
+            rows = list(reader)
+            
+            if not rows:
+                return {
+                    "headers": [],
+                    "recognized": {},
+                    "reasons": ["Empty CSV file"],
+                    "rows_total": 0,
+                    "rows_accepted": 0,
+                    "timestamps": 0
+                }
+            
+            # Get field names from CSV
+            headers = reader.fieldnames or []
+            
+            # Resolve columns using the new function
+            resolved = cls.resolve_weather_columns(headers)
+            
+            # Get recognized headers with canonical names
+            recognized_headers = {}
+            for k, v in resolved.items():
+                # Map canonical field names to their actual headers
+                if k == "ts":
+                    recognized_headers["ts_ms"] = v["header"]
+                elif k == "temp":
+                    recognized_headers["temp_c"] = v["header"]
+                elif k == "wind":
+                    recognized_headers["wind_kph"] = v["header"]
+                elif k == "humidity":
+                    recognized_headers["humidity_pct"] = v["header"]
+                else:
+                    recognized_headers[k] = v["header"]
+            
+            # Get unrecognized headers
+            unrecognized_names = [h for h in headers if h not in recognized_headers.values()]
+            
+            # Process rows to count accepted and collect reasons
+            accepted_count = 0
+            all_reasons = []
+            
+            for row_num, row in enumerate(rows, 1):
+                try:
+                    weather_point, warnings, discard_reason = cls._process_row(row, "dummy_session", row_num)
+                    if discard_reason:
+                        all_reasons.append(discard_reason)
+                    if weather_point:
+                        accepted_count += 1
+                    all_reasons.extend(warnings)
+                except Exception as e:
+                    all_reasons.append(f"row {row_num}: error processing row: {e}")
+            
+            return {
+                "headers": headers,
+                "recognized": recognized_headers,
+                "recognized_headers": list(recognized_headers.values()),
+                "unrecognized_names": [h for h in headers if h not in recognized_headers.values()],
+                "reasons": all_reasons,
+                "rows_total": len(rows),
+                "rows_accepted": accepted_count,
+                "timestamps": len(set(row.get(resolved["ts"]["header"], "") for row in rows if resolved.get("ts")))
+            }
+            
+        except Exception as e:
+            return {
+                "headers": [],
+                "recognized": {},
+                "reasons": [f"Error processing weather CSV: {str(e)}"],
+                "rows_total": 0,
+                "rows_accepted": 0,
+                "timestamps": 0
+            }
+    
+    @classmethod
     def inspect_text(cls, text: str) -> Dict[str, Any]:
         """
         Inspect weather CSV text to analyze headers and data structure.
@@ -441,7 +891,7 @@ class WeatherCSVImporter:
             text: CSV text content to inspect
             
         Returns:
-            Dictionary with inspection results including headers, mapping, and reasons
+            Dictionary with inspection results including headers, recognized, reasons, rows_total, timestamps
         """
         import io
         from typing import Any, Dict, Set
@@ -461,17 +911,7 @@ class WeatherCSVImporter:
         resolved = cls.resolve_weather_columns(headers)
         
         # Convert to the expected format for the API
-        recognized = {}
-        for field_type, info in resolved.items():
-            # Map to the standardized field names expected by the API
-            if field_type == "ts":
-                recognized["ts"] = "ts_ms"  # Standardize to ts_ms
-            elif field_type == "temp":
-                recognized["temp"] = "temp_c"  # Standardize to temp_c
-            elif field_type == "humidity":
-                recognized["humidity"] = "humidity_pct"  # Standardize to humidity_pct
-            elif field_type == "wind":
-                recognized["wind"] = "wind_kph"  # Standardize to wind_kph
+        recognized = {k: v["header"] for k, v in resolved.items()}
         
         # Generate reasons
         reasons = []
@@ -480,9 +920,9 @@ class WeatherCSVImporter:
         
         # Add missing field reasons
         if "ts" not in resolved:
-            reasons.append("No timestamp field found among expected: ts_ms, utc, utc_seconds, timestamp, time_s, time_ms")
+            reasons.append("No timestamp field found among expected: ts_ms, time_ms, timestamp_ms, ts, timestamp, utc, epoch, epoch_ms")
         if "temp" not in resolved:
-            reasons.append("No temperature field found among expected: temp, temp_c, temperature, air_temp_c")
+            reasons.append("No temperature field found among expected: temp, temp_c, air_temp_c")
         if "humidity" not in resolved:
             reasons.append("No humidity field found among expected: humidity, humidity_pct, rh, relative_humidity")
         if "wind" not in resolved:

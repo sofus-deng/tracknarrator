@@ -48,10 +48,6 @@ class MYLAPSSectionsCSVImporter:
             r"\bFL(_TIME|_ELAPSED|_SEC|_S|_MS)?\b",
             r"\bFINISH(_TIME|_ELAPSED|_SEC|_S|_MS)?\b",
             r"\bFINAL\s*LAP(_TIME|_ELAPSED|_SEC)?\b",
-            r"\bFINAL_LAP\b",
-            r"\bFL_TIME\b",
-            r"\bFINISH(_TIME|_ELAPSED|_SEC|_S|_MS)?\b",
-            r"\bFINAL\s*LAP(_TIME|_ELAPSED|_SEC)?\b",
             r"\bFINAL_LAP\b"
         ]
     }
@@ -236,7 +232,7 @@ class MYLAPSSectionsCSVImporter:
     @classmethod
     def _get_lap_number(cls, row: Dict[str, str]) -> str:
         """Extract lap number from row with various possible header names."""
-        for header in ['LAP_NUMBER', 'LAP', 'LAPNO', 'Lap', 'lap']:
+        for header in ['LAP_NUMBER', 'LAP', 'LAPNO', 'Lap']:
             if header in row and row[header].strip():
                 return row[header].strip()
         return ''
