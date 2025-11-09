@@ -414,8 +414,8 @@ class SessionStore:
         """Get session bundle by ID."""
         return self.sessions.get(session_id)
     
-    def make_session(self, session_id: str, track: str = "Barber Motorsports Park", 
-                    track_id: str = "barber-motorsports-park", 
+    def make_session(self, session_id: str, track: str = "Barber Motorsports Park",
+                    track_id: str = "barber-motorsports-park",
                     track_map_version: str = "pdf:Barber_Circuit_Map",
                     source: str = "mylaps_csv") -> Session:
         """Create a new session with default values."""
@@ -426,6 +426,10 @@ class SessionStore:
             track_id=track_id,
             track_map_version=track_map_version
         )
+    
+    def clear(self):
+        """Clear all sessions from the store (useful for testing)."""
+        self.sessions.clear()
 
 
 # Global store instance

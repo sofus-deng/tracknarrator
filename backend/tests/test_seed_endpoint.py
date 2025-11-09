@@ -10,11 +10,18 @@ from pydantic import ValidationError
 
 from tracknarrator.api import app
 from tracknarrator.schema import SessionBundle
+from tracknarrator.store import store
 
 # Get the path to the fixtures directory
 fixtures_dir = Path(__file__).parent.parent.parent / "fixtures"
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def clear_store_before_test():
+    """Clear the session store before each test to ensure clean state."""
+    store.clear()
 
 
 def test_seed_json():
