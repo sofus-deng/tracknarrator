@@ -24,7 +24,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-q --cov=src/tracknarrator --cov-report=term-missing"
+addopts = "-q --cov=src/tracknarrator --cov-report=term-missing --cov-fail-under=79"
 
 [tool.coverage.run]
 source = ["src/tracknarrator"]

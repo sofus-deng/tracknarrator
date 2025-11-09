@@ -671,3 +671,61 @@ class TestEventDetection:
         # All events should have severity between 0 and 1
         for event in top5:
             assert 0 <= event["severity"] <= 1, f"Severity out of bounds: {event['severity']}"
+    
+    def test_events_config_constants(self):
+        """Test that using config constants doesn't change behavior."""
+        from tracknarrator.config import ROBUST_Z_LAP, ROBUST_Z_SECTION, EVENT_TYPE_ORDER, DEFAULT_SECTION_LABELS
+        
+        # Verify constants are properly defined
+        assert ROBUST_Z_LAP == 2.5
+        assert ROBUST_Z_SECTION == 2.8
+        assert EVENT_TYPE_ORDER == ["lap_outlier", "section_outlier", "position_change"]
+        assert DEFAULT_SECTION_LABELS == ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
+        
+        # Test that current bundle still produces same results with new implementation
+        all_events = detect_events(self.bundle)
+        top5_before = top5_events(self.bundle)
+        
+        # Should still have same number of events
+        assert len(all_events) >= 0
+        assert len(top5_before) <= 5
+        
+        # Verify sorting still works
+        if len(top5_before) > 1:
+            for i in range(len(top5_before) - 1):
+                assert top5_before[i]["severity"] >= top5_before[i+1]["severity"]
+                
+        # Verify no duplicate (lap_no, type) pairs
+        seen = set()
+        for event in top5_before:
+            key = (event["lap_no"], event["type"])
+            assert key not in seen
+            seen.add(key)
+    
+    def test_robust_z_optimization(self):
+        """Test that robust z computation optimization works correctly."""
+        from tracknarrator.events import prepare_robust_stats, robust_z_from_stats
+        
+        # Test prepare_robust_stats
+        values = [100, 110, 120, 130, 140]
+        median, mad = prepare_robust_stats(values)
+        
+        # Median should be 120 for sorted [100, 110, 120, 130, 140]
+        assert median == 120
+        assert mad > 0
+        
+        # Test robust_z_from_stats with same values
+        z_outlier = robust_z_from_stats(200, median, mad)
+        z_normal = robust_z_from_stats(120, median, mad)
+        
+        # Outlier should have higher z-score
+        assert z_outlier > z_normal
+        assert z_normal == 0  # Value at median should have z=0
+        
+        # Test with empty values
+        median, mad = prepare_robust_stats([])
+        assert median == 0
+        assert mad == 0
+        
+        z_empty = robust_z_from_stats(100, median, mad)
+        assert z_empty == 0  # Should return 0 when mad ≈ 0

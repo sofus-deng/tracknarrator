@@ -27,3 +27,10 @@ class Settings(BaseModel):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings.from_env()
+
+
+# Event Detection Constants
+ROBUST_Z_LAP = 2.5
+ROBUST_Z_SECTION = 2.8
+EVENT_TYPE_ORDER = ["lap_outlier", "section_outlier", "position_change"]
+DEFAULT_SECTION_LABELS = ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]

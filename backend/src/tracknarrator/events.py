@@ -5,6 +5,57 @@ from collections import defaultdict
 import math
 
 from .schema import SessionBundle, Lap, Section, Telemetry
+from .config import ROBUST_Z_LAP, ROBUST_Z_SECTION, EVENT_TYPE_ORDER, DEFAULT_SECTION_LABELS
+
+
+def prepare_robust_stats(values: List[float]) -> tuple[float, float]:
+    """
+    Prepare robust statistics (median and MAD) for a list of values.
+    
+    Args:
+        values: List of values to calculate statistics from
+        
+    Returns:
+        Tuple of (median, mad) where mad is median absolute deviation
+    """
+    if not values:
+        return 0.0, 0.0
+    
+    # Calculate median
+    sorted_vals = sorted(values)
+    n = len(sorted_vals)
+    if n % 2 == 0:
+        median = (sorted_vals[n//2 - 1] + sorted_vals[n//2]) / 2
+    else:
+        median = sorted_vals[n//2]
+    
+    # Calculate MAD (Median Absolute Deviation)
+    abs_devs = [abs(v - median) for v in values]
+    abs_devs.sort()
+    if n % 2 == 0:
+        mad = (abs_devs[n//2 - 1] + abs_devs[n//2]) / 2
+    else:
+        mad = abs_devs[n//2]
+    
+    return median, mad
+
+
+def robust_z_from_stats(x: float, median: float, mad: float) -> float:
+    """
+    Calculate robust z-score from pre-computed statistics.
+    
+    Args:
+        x: Value to calculate z-score for
+        median: Pre-computed median
+        mad: Pre-computed median absolute deviation
+        
+    Returns:
+        Robust z-score (0 if MAD ≈ 0)
+    """
+    if mad < 1e-10:  # MAD ≈ 0
+        return 0.0
+    
+    return abs(x - median) / (1.4826 * mad)
 
 
 class Event(TypedDict):
@@ -31,27 +82,8 @@ def _robust_z_score(values: List[float], x: float) -> float:
     if not values:
         return 0.0
     
-    # Calculate median
-    sorted_vals = sorted(values)
-    n = len(sorted_vals)
-    if n % 2 == 0:
-        median = (sorted_vals[n//2 - 1] + sorted_vals[n//2]) / 2
-    else:
-        median = sorted_vals[n//2]
-    
-    # Calculate MAD (Median Absolute Deviation)
-    abs_devs = [abs(v - median) for v in values]
-    abs_devs.sort()
-    if n % 2 == 0:
-        mad = (abs_devs[n//2 - 1] + abs_devs[n//2]) / 2
-    else:
-        mad = abs_devs[n//2]
-    
-    # Calculate robust z-score
-    if mad < 1e-10:  # MAD ≈ 0
-        return 0.0
-    
-    return abs(x - median) / (1.4826 * mad)
+    median, mad = prepare_robust_stats(values)
+    return robust_z_from_stats(x, median, mad)
 
 
 def _detect_lap_outliers(bundle: SessionBundle) -> List[Event]:
@@ -84,31 +116,26 @@ def _detect_lap_outliers(bundle: SessionBundle) -> List[Event]:
         for lap in laps:
             robust_z = _robust_z_score(lap_times, lap.laptime_ms)
             
-            if robust_z >= 2.5:  # Threshold for outlier
-                severity = min(1.0, robust_z / 4.0)  # Cap at 1.0
-                
-                # Calculate median for summary
-                sorted_times = sorted(lap_times)
-                n = len(sorted_times)
-                if n % 2 == 0:
-                    median = (sorted_times[n//2 - 1] + sorted_times[n//2]) / 2
-                else:
-                    median = sorted_times[n//2]
-                
-                events.append({
-                    "type": "lap_outlier",
-                    "lap_no": lap.lap_no,
-                    "section": None,
-                    "severity": severity,
-                    "summary": f"Lap {lap.lap_no}: {lap.laptime_ms} ms vs median {median:.0f} ms (robust_z={robust_z:.2f})",
-                    "meta": {
-                        "driver": driver,
-                        "laptime_ms": lap.laptime_ms,
-                        "median_ms": median,
-                        "robust_z": robust_z,
-                        "threshold": 2.5
-                    }
-                })
+            if robust_z >= ROBUST_Z_LAP:  # Threshold for outlier
+                    severity = min(1.0, robust_z / 4.0)  # Cap at 1.0
+                    
+                    # Calculate median for summary
+                    median, _ = prepare_robust_stats(lap_times)
+                    
+                    events.append({
+                        "type": "lap_outlier",
+                        "lap_no": lap.lap_no,
+                        "section": None,
+                        "severity": severity,
+                        "summary": f"Lap {lap.lap_no}: {lap.laptime_ms} ms vs median {median:.0f} ms (robust_z={robust_z:.2f})",
+                        "meta": {
+                            "driver": driver,
+                            "laptime_ms": lap.laptime_ms,
+                            "median_ms": median,
+                            "robust_z": robust_z,
+                            "threshold": ROBUST_Z_LAP
+                        }
+                    })
     
     return events
 
@@ -125,21 +152,17 @@ def _detect_section_outliers(bundle: SessionBundle) -> List[Event]:
     """
     events = []
     
-    # Section names to check
-    section_names = ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
+    # Create a mapping of lap_no to driver for O(1) lookup
+    lap_driver_map = {lap.lap_no: lap.driver for lap in bundle.laps}
     
     # Group sections by name and driver
     driver_sections = defaultdict(lambda: defaultdict(list))
     for section in bundle.sections:
-        if section.name in section_names:
+        if section.name in DEFAULT_SECTION_LABELS:
             duration = section.t_end_ms - section.t_start_ms
             if duration > 0:  # Only consider valid durations
-                # Find the corresponding lap to get driver info
-                driver = None
-                for lap in bundle.laps:
-                    if lap.lap_no == section.lap_no:
-                        driver = lap.driver
-                        break
+                # Use O(1) lookup instead of O(n) scan
+                driver = lap_driver_map.get(section.lap_no)
                 
                 if driver:
                     driver_sections[driver][section.name].append({
@@ -156,21 +179,15 @@ def _detect_section_outliers(bundle: SessionBundle) -> List[Event]:
             
             # Extract durations
             durations = [sd["duration"] for sd in section_data_list]
+            # Pre-compute statistics once
+            median, mad = prepare_robust_stats(durations)
             
             # Check each section for outlier status
             for section_data in section_data_list:
-                robust_z = _robust_z_score(durations, section_data["duration"])
+                robust_z = robust_z_from_stats(section_data["duration"], median, mad)
                 
-                if robust_z >= 2.8:  # Threshold for section outlier
+                if robust_z >= ROBUST_Z_SECTION:  # Threshold for section outlier
                     severity = min(1.0, robust_z / 3.5)  # Cap at 1.0
-                    
-                    # Calculate median for summary
-                    sorted_durations = sorted(durations)
-                    n = len(sorted_durations)
-                    if n % 2 == 0:
-                        median = (sorted_durations[n//2 - 1] + sorted_durations[n//2]) / 2
-                    else:
-                        median = sorted_durations[n//2]
                     
                     events.append({
                         "type": "section_outlier",
@@ -184,7 +201,7 @@ def _detect_section_outliers(bundle: SessionBundle) -> List[Event]:
                             "duration_ms": section_data["duration"],
                             "median_ms": median,
                             "robust_z": robust_z,
-                            "threshold": 2.8
+                            "threshold": ROBUST_Z_SECTION
                         }
                     })
     
@@ -313,8 +330,8 @@ def top5_events(bundle: SessionBundle) -> List[Event]:
     if not all_events:
         return []
     
-    # Define type precedence for sorting
-    type_order = {"lap_outlier": 0, "section_outlier": 1, "position_change": 2}
+    # Use centralized type order from config
+    type_order = {event_type: i for i, event_type in enumerate(EVENT_TYPE_ORDER)}
     
     # Sort events by:
     # 1. Severity (descending)
@@ -363,20 +380,19 @@ def build_sparklines(bundle: SessionBundle) -> Dict[str, Any]:
     laps_ms = [laps_by_no[lap_no] for lap_no in sorted(laps_by_no.keys())]
     
     # Extract section durations by name
-    section_names = ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
-    sections_ms = {name: [] for name in section_names}
+    sections_ms = {name: [] for name in DEFAULT_SECTION_LABELS}
     
     # Group sections by lap and name
     sections_by_lap_name = defaultdict(lambda: defaultdict(list))
     for section in bundle.sections:
-        if section.name in section_names:
+        if section.name in DEFAULT_SECTION_LABELS:
             duration = section.t_end_ms - section.t_start_ms
             if duration > 0:
                 sections_by_lap_name[section.lap_no][section.name] = duration
     
     # Create ordered lists for each section name
     for lap_no in sorted(sections_by_lap_name.keys()):
-        for name in section_names:
+        for name in DEFAULT_SECTION_LABELS:
             if name in sections_by_lap_name[lap_no]:
                 sections_ms[name].append(sections_by_lap_name[lap_no][name])
             else:

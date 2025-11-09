@@ -17,6 +17,7 @@ from .store import store
 from .schema import SessionBundle
 from .events import detect_events, top5_events, build_sparklines
 from .narrative import build_narrative
+from .cards import build_share_cards
 
 # Constants for seed endpoint
 MAX_BYTES = 2 * 1024 * 1024  # 2MB guard
@@ -477,6 +478,37 @@ async def get_session_narrative(session_id: str) -> Dict[str, Any]:
     narrative = build_narrative(bundle, top5, ai_native)
     
     return narrative
+
+
+@app.get("/session/{session_id}/summary")
+async def get_session_summary(session_id: str) -> Dict[str, Any]:
+    """
+    Get comprehensive session summary with events, cards, and sparklines.
+    
+    Args:
+        session_id: Session ID to retrieve summary for
+        
+    Returns:
+        Dictionary with events, cards, and sparklines
+    """
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Get top 5 events
+    events = top5_events(bundle)
+    
+    # Build share cards
+    cards = build_share_cards(bundle)
+    
+    # Build sparklines
+    sparklines = build_sparklines(bundle)
+    
+    return {
+        "events": events,
+        "cards": cards,
+        "sparklines": sparklines
+    }
 
 
 @app.post("/dev/inspect/trd-long")
