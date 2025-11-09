@@ -2,10 +2,11 @@
 
 import io
 import json
+import zipfile
 from typing import Dict, Any, Union
 
 from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Body
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from .config import get_settings
@@ -18,6 +19,7 @@ from .schema import SessionBundle
 from .events import detect_events, top5_events, build_sparklines
 from .narrative import build_narrative
 from .cards import build_share_cards
+from .coach import coach_tips
 
 # Constants for seed endpoint
 MAX_BYTES = 2 * 1024 * 1024  # 2MB guard
@@ -509,6 +511,102 @@ async def get_session_summary(session_id: str) -> Dict[str, Any]:
         "cards": cards,
         "sparklines": sparklines
     }
+
+
+@app.get("/session/{session_id}/export")
+async def get_session_export(session_id: str, lang: str = Query("zh-Hant", description="Language for coaching tips")) -> Response:
+    """
+    Get session export pack as ZIP file.
+    
+    Args:
+        session_id: Session ID to export
+        lang: Language for coaching tips ("zh-Hant" or "en")
+        
+    Returns:
+        ZIP file containing all session data
+    """
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Get top 5 events
+    events = top5_events(bundle)
+    
+    # Build share cards
+    cards = build_share_cards(bundle)
+    
+    # Build sparklines
+    sparklines = build_sparklines(bundle)
+    
+    # Build coaching tips
+    coach_tips_data = coach_tips(bundle, events, lang=lang)
+    
+    # Build KPIs
+    total_laps = len(bundle.laps)
+    best_lap_ms = min([lap.laptime_ms for lap in bundle.laps if lap.laptime_ms > 0], default=0)
+    
+    # Calculate median lap time
+    valid_lap_times = [lap.laptime_ms for lap in bundle.laps if lap.laptime_ms > 0]
+    if valid_lap_times:
+        sorted_times = sorted(valid_lap_times)
+        n = len(sorted_times)
+        if n % 2 == 0:
+            median_lap_ms = (sorted_times[n//2 - 1] + sorted_times[n//2]) / 2
+        else:
+            median_lap_ms = sorted_times[n//2]
+    else:
+        median_lap_ms = 0
+    
+    # Calculate session duration (if we have telemetry timestamps)
+    session_duration_ms = 0
+    if bundle.telemetry:
+        timestamps = [t.ts_ms for t in bundle.telemetry if t.ts_ms is not None]
+        if timestamps:
+            session_duration_ms = max(timestamps) - min(timestamps)
+    
+    kpis = {
+        "total_laps": total_laps,
+        "best_lap_ms": best_lap_ms,
+        "median_lap_ms": median_lap_ms,
+        "session_duration_ms": session_duration_ms
+    }
+    
+    # Create summary data
+    summary_data = {
+        "events": events,
+        "cards": cards,
+        "sparklines": sparklines
+    }
+    
+    # Create ZIP file in memory
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # Add summary.json
+        zip_file.writestr("summary.json", json.dumps(summary_data, ensure_ascii=False, indent=2))
+        
+        # Add coach_tips.json
+        zip_file.writestr("coach_tips.json", json.dumps(coach_tips_data, ensure_ascii=False, indent=2))
+        
+        # Add events.json
+        zip_file.writestr("events.json", json.dumps(events, ensure_ascii=False, indent=2))
+        
+        # Add cards.json
+        zip_file.writestr("cards.json", json.dumps(cards, ensure_ascii=False, indent=2))
+        
+        # Add sparklines.json
+        zip_file.writestr("sparklines.json", json.dumps(sparklines, ensure_ascii=False, indent=2))
+        
+        # Add kpis.json
+        zip_file.writestr("kpis.json", json.dumps(kpis, ensure_ascii=False, indent=2))
+    
+    zip_buffer.seek(0)
+    
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={session_id}_export.zip"}
+    )
 
 
 @app.post("/dev/inspect/trd-long")
