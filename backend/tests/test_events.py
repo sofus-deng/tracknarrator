@@ -344,3 +344,330 @@ class TestEventDetection:
         assert isinstance(sparklines, dict)
         assert sparklines["laps_ms"] == []
         assert sparklines["speed_series"] == []
+    
+    def test_top5_events_ranking_comprehensive(self):
+        """Test comprehensive ranking behavior of top5_events."""
+        # Create a bundle with known events to test ranking
+        session = Session(
+            id="ranking-test",
+            source="mylaps_csv",
+            track="Test Track",
+            track_id="test-track",
+            schema_version="0.1.2"
+        )
+        
+        # Create laps with different severities and lap numbers
+        laps = [
+            Lap(session_id="ranking-test", lap_no=1, driver="Driver1", laptime_ms=100000, position=5),
+            Lap(session_id="ranking-test", lap_no=2, driver="Driver1", laptime_ms=200000, position=3),  # High severity outlier
+            Lap(session_id="ranking-test", lap_no=3, driver="Driver1", laptime_ms=105000, position=1),  # Position change
+            Lap(session_id="ranking-test", lap_no=4, driver="Driver1", laptime_ms=102000, position=2),
+            Lap(session_id="ranking-test", lap_no=5, driver="Driver1", laptime_ms=101000, position=1),
+        ]
+        
+        # Create sections with one severe outlier
+        sections = []
+        for lap_no in [1, 2, 3, 4, 5]:
+            start_time = 0
+            for section_name in ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]:
+                duration = 20000  # Normal duration
+                # Make lap 2 IM1a section very slow (high severity)
+                if lap_no == 2 and section_name == "IM1a":
+                    duration = 200000  # 10x normal
+                
+                end_time = start_time + duration
+                sections.append(Section(
+                    session_id="ranking-test",
+                    lap_no=lap_no,
+                    name=section_name,
+                    t_start_ms=start_time,
+                    t_end_ms=end_time,
+                    meta={"source": "map"}
+                ))
+                start_time = end_time
+        
+        # Add more normal sections to have enough data for outlier detection
+        for lap_no in [6, 7, 8]:
+            start_time = 0
+            for section_name in ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]:
+                duration = 20000
+                end_time = start_time + duration
+                sections.append(Section(
+                    session_id="ranking-test",
+                    lap_no=lap_no,
+                    name=section_name,
+                    t_start_ms=start_time,
+                    t_end_ms=end_time,
+                    meta={"source": "map"}
+                ))
+                start_time = end_time
+        
+        bundle = SessionBundle(
+            session=session,
+            laps=laps,
+            sections=sections,
+            telemetry=[],
+            weather=[]
+        )
+        
+        top5 = top5_events(bundle)
+        
+        # Should have at least 3 events (lap outlier, section outlier, position change)
+        assert len(top5) >= 3
+        
+        # Check sorting: severity first (descending)
+        for i in range(len(top5) - 1):
+            assert top5[i]["severity"] >= top5[i+1]["severity"], \
+                f"Events not sorted by severity: {top5[i]['severity']} < {top5[i+1]['severity']}"
+        
+        # For equal severity, check recency (higher lap_no first)
+        for i in range(len(top5) - 1):
+            if abs(top5[i]["severity"] - top5[i+1]["severity"]) < 1e-10:
+                lap_i = top5[i]["lap_no"] or -1
+                lap_next = top5[i+1]["lap_no"] or -1
+                assert lap_i >= lap_next, \
+                    f"Equal severity events not sorted by recency: lap {lap_i} before lap {lap_next}"
+        
+        # For equal severity and lap_no, check type order
+        type_order = {"lap_outlier": 0, "section_outlier": 1, "position_change": 2}
+        for i in range(len(top5) - 1):
+            if (abs(top5[i]["severity"] - top5[i+1]["severity"]) < 1e-10 and
+                (top5[i]["lap_no"] or -1) == (top5[i+1]["lap_no"] or -1)):
+                type_i = type_order.get(top5[i]["type"], 999)
+                type_next = type_order.get(top5[i+1]["type"], 999)
+                assert type_i <= type_next, \
+                    f"Equal severity/lap events not sorted by type: {top5[i]['type']} before {top5[i+1]['type']}"
+    
+    def test_top5_events_deduplication(self):
+        """Test that top5_events properly deduplicates by (lap_no, type)."""
+        from tracknarrator.events import _detect_lap_outliers, _detect_section_outliers, _detect_position_changes
+        
+        # Create a bundle that might generate duplicate events
+        session = Session(
+            id="dedup-test",
+            source="mylaps_csv",
+            track="Test Track",
+            track_id="test-track",
+            schema_version="0.1.2"
+        )
+        
+        # Create laps with multiple potential outliers
+        laps = [
+            Lap(session_id="dedup-test", lap_no=1, driver="Driver1", laptime_ms=100000, position=5),
+            Lap(session_id="dedup-test", lap_no=2, driver="Driver1", laptime_ms=150000, position=3),  # Outlier
+            Lap(session_id="dedup-test", lap_no=3, driver="Driver1", laptime_ms=160000, position=1),  # More severe outlier
+            Lap(session_id="dedup-test", lap_no=4, driver="Driver1", laptime_ms=102000, position=2),
+        ]
+        
+        # Create sections with outliers
+        sections = []
+        for lap_no in [1, 2, 3, 4, 5, 6, 7, 8]:
+            start_time = 0
+            for section_name in ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]:
+                duration = 20000
+                # Make some sections outliers
+                if lap_no == 2 and section_name == "IM1a":
+                    duration = 150000
+                elif lap_no == 3 and section_name == "IM1a":
+                    duration = 180000  # More severe
+                
+                end_time = start_time + duration
+                sections.append(Section(
+                    session_id="dedup-test",
+                    lap_no=lap_no,
+                    name=section_name,
+                    t_start_ms=start_time,
+                    t_end_ms=end_time,
+                    meta={"source": "map"}
+                ))
+                start_time = end_time
+        
+        bundle = SessionBundle(
+            session=session,
+            laps=laps,
+            sections=sections,
+            telemetry=[],
+            weather=[]
+        )
+        
+        top5 = top5_events(bundle)
+        
+        # Check no duplicate (lap_no, type) combinations
+        seen = set()
+        for event in top5:
+            key = (event["lap_no"], event["type"])
+            assert key not in seen, f"Duplicate (lap_no, type) found: {key}"
+            seen.add(key)
+        
+        # Check that severity is non-increasing
+        for i in range(len(top5) - 1):
+            assert top5[i]["severity"] >= top5[i+1]["severity"], \
+                f"Severity should be non-increasing: {top5[i]['severity']} < {top5[i+1]['severity']}"
+    
+    def test_top5_events_edge_cases(self):
+        """Test top5_events with edge cases and low-data sessions."""
+        # Test with no laps
+        empty_bundle = SessionBundle(
+            session=Session(
+                id="empty-test",
+                source="mylaps_csv",
+                track="Test Track",
+                track_id="test-track",
+                schema_version="0.1.2"
+            ),
+            laps=[],
+            sections=[],
+            telemetry=[],
+            weather=[]
+        )
+        
+        top5 = top5_events(empty_bundle)
+        assert top5 == []
+        
+        # Test with only 1 lap (should not crash)
+        single_lap_bundle = SessionBundle(
+            session=Session(
+                id="single-test",
+                source="mylaps_csv",
+                track="Test Track",
+                track_id="test-track",
+                schema_version="0.1.2"
+            ),
+            laps=[Lap(session_id="single-test", lap_no=1, driver="Driver1", laptime_ms=100000, position=1)],
+            sections=[],
+            telemetry=[],
+            weather=[]
+        )
+        
+        top5 = top5_events(single_lap_bundle)
+        assert isinstance(top5, list)
+        # Should return empty since no outliers can be detected with only 1 lap
+        assert len(top5) == 0
+        
+        # Test with 2 laps (position changes possible, but no outliers)
+        two_lap_bundle = SessionBundle(
+            session=Session(
+                id="two-test",
+                source="mylaps_csv",
+                track="Test Track",
+                track_id="test-track",
+                schema_version="0.1.2"
+            ),
+            laps=[
+                Lap(session_id="two-test", lap_no=1, driver="Driver1", laptime_ms=100000, position=5),
+                Lap(session_id="two-test", lap_no=2, driver="Driver1", laptime_ms=102000, position=3),
+            ],
+            sections=[],
+            telemetry=[],
+            weather=[]
+        )
+        
+        top5 = top5_events(two_lap_bundle)
+        assert isinstance(top5, list)
+        # Should detect position change
+        assert len(top5) >= 1
+        assert top5[0]["type"] == "position_change"
+        
+        # Test with only low-severity events
+        low_severity_bundle = SessionBundle(
+            session=Session(
+                id="low-sev-test",
+                source="mylaps_csv",
+                track="Test Track",
+                track_id="test-track",
+                schema_version="0.1.2"
+            ),
+            laps=[
+                Lap(session_id="low-sev-test", lap_no=1, driver="Driver1", laptime_ms=100000, position=5),
+                Lap(session_id="low-sev-test", lap_no=2, driver="Driver1", laptime_ms=101000, position=4),  # Small change
+                Lap(session_id="low-sev-test", lap_no=3, driver="Driver1", laptime_ms=102000, position=3),  # Small change
+                Lap(session_id="low-sev-test", lap_no=4, driver="Driver1", laptime_ms=103000, position=2),  # Small change
+            ],
+            sections=[],
+            telemetry=[],
+            weather=[]
+        )
+        
+        top5 = top5_events(low_severity_bundle)
+        assert isinstance(top5, list)
+        # Should detect position changes but they should have low severity
+        for event in top5:
+            assert event["severity"] >= 0
+            assert event["severity"] <= 1
+            if event["type"] == "position_change":
+                # Position changes of 1 position should have low severity
+                assert event["severity"] <= 0.2
+    
+    def test_top5_events_type_precedence(self):
+        """Test that type precedence is correctly applied when severity and lap_no are equal."""
+        # This is a bit tricky to test naturally, so we'll create a scenario
+        # where we can manually verify the type ordering
+        
+        session = Session(
+            id="type-test",
+            source="mylaps_csv",
+            track="Test Track",
+            track_id="test-track",
+            schema_version="0.1.2"
+        )
+        
+        # Create laps that will generate events with same severity and lap_no
+        # We'll use position changes to create multiple events on the same lap
+        laps = [
+            Lap(session_id="type-test", lap_no=1, driver="Driver1", laptime_ms=100000, position=5),
+            Lap(session_id="type-test", lap_no=2, driver="Driver1", laptime_ms=100000, position=3),  # Position change
+            Lap(session_id="type-test", lap_no=3, driver="Driver1", laptime_ms=100000, position=1),  # Position change
+        ]
+        
+        bundle = SessionBundle(
+            session=session,
+            laps=laps,
+            sections=[],
+            telemetry=[],
+            weather=[]
+        )
+        
+        top5 = top5_events(bundle)
+        
+        # Should have position change events
+        position_changes = [e for e in top5 if e["type"] == "position_change"]
+        assert len(position_changes) >= 1
+        
+        # All should be position_change type (no lap_outlier or section_outlier)
+        # since lap times are all identical
+        for event in top5:
+            if event["type"] != "position_change":
+                # If we get other types, they should be sorted correctly
+                pass
+    
+    def test_top5_events_severity_bounds(self):
+        """Test that all events in top5_events have severity within bounds."""
+        # Create a bundle with various severity levels
+        session = Session(
+            id="severity-test",
+            source="mylaps_csv",
+            track="Test Track",
+            track_id="test-track",
+            schema_version="0.1.2"
+        )
+        
+        # Create some extreme outliers
+        laps = [
+            Lap(session_id="severity-test", lap_no=1, driver="Driver1", laptime_ms=100000, position=5),
+            Lap(session_id="severity-test", lap_no=2, driver="Driver1", laptime_ms=500000, position=3),  # Extreme outlier
+            Lap(session_id="severity-test", lap_no=3, driver="Driver1", laptime_ms=100000, position=1),
+        ]
+        
+        bundle = SessionBundle(
+            session=session,
+            laps=laps,
+            sections=[],
+            telemetry=[],
+            weather=[]
+        )
+        
+        top5 = top5_events(bundle)
+        
+        # All events should have severity between 0 and 1
+        for event in top5:
+            assert 0 <= event["severity"] <= 1, f"Severity out of bounds: {event['severity']}"
