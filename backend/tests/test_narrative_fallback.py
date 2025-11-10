@@ -38,11 +38,11 @@ class TestNarrativeFallback:
             weather=[]
         )
         
-        result = build_narrative(bundle, [], on=True)
-        
+        result = build_narrative(bundle, [], ai_native=True)
+
         # Should return session statistics since there are valid laps
-        assert result["enabled"] is True
-        assert len(result["lines"]) == 3
+        assert isinstance(result, list)
+        assert len(result) == 3
         # With valid lap times, returns session stats instead of generic fallback
         assert "Best lap" in result["lines"][0]
         assert "median" in result["lines"][0]
@@ -75,10 +75,10 @@ class TestNarrativeFallback:
             meta={"driver": "Driver1", "laptime_ms": 130000, "median_ms": 100500, "robust_z": 3.0}
         )
         
-        result = build_narrative(bundle, [single_event], on=True)
-        
-        assert result["enabled"] is True
-        assert len(result["lines"]) == 3
+        result = build_narrative(bundle, [single_event], ai_native=True)
+
+        assert isinstance(result, list)
+        assert len(result) == 3
         
         # First line should be the event
         assert "Lap 2" in result["lines"][0]
@@ -319,11 +319,11 @@ class TestNarrativeFallback:
             weather=[]
         )
         
-        result = build_narrative(bundle, [], on=True)
-        
+        result = build_narrative(bundle, [], ai_native=True)
+
         # Should include session statistics in fallback
-        assert result["enabled"] is True
-        assert len(result["lines"]) == 3
+        assert isinstance(result, list)
+        assert len(result) == 3
         # Should contain session stats
         stats_line = None
         for line in result["lines"]:
@@ -361,11 +361,11 @@ class TestNarrativeFallback:
             weather=[]
         )
         
-        result1 = build_narrative(bundle1, [], on=True)
-        result2 = build_narrative(bundle2, [], on=True)
+        result1 = build_narrative(bundle1, [], ai_native=True)
+        result2 = build_narrative(bundle2, [], ai_native=True)
         
         # Should have same format (even if content differs slightly)
-        assert result1["enabled"] == result2["enabled"]
+        assert isinstance(result1, list) and isinstance(result2, list)
         assert len(result1["lines"]) == len(result2["lines"])
         
         # All lines should have similar structure

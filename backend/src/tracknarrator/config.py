@@ -11,14 +11,14 @@ class Settings(BaseModel):
     """Application settings."""
     
     ai_native: bool = Field(
-        default=False,
+        default=True,
         description="Whether AI-native features are enabled"
     )
     
     @classmethod
     def from_env(cls) -> "Settings":
         """Create settings from environment variables."""
-        ai_native_val = os.getenv("AI_NATIVE", "off").lower()
+        ai_native_val = os.getenv("AI_NATIVE", "on").lower()
         ai_native = ai_native_val in ("on", "true", "1", "yes", "enabled")
         return cls(ai_native=ai_native)
 

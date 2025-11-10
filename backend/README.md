@@ -203,3 +203,97 @@ The inspector automatically maps variant field names:
 - `rows_total`: Total number of rows in the CSV
 - `timestamps`: Number of distinct timestamps found
 - `min_fields_per_ts`: Minimum number of fields per timestamp (indicates data completeness)
+
+## AI-Native Module
+
+The AI-Native module provides deterministic, multilingual narrative generation for racing sessions.
+
+### Features
+
+- **Multilingual Support**: Supports Traditional Chinese (zh-Hant) and English (en)
+- **Deterministic Output**: Uses hash-based template selection for consistent results
+- **Template Banks**: Multiple variants per event type for diversity
+- **Fallback Mode**: Rule-based generation when AI-native is disabled
+- **Event Type Diversity**: Prefers different event types when possible
+
+### Usage
+
+#### Enable/Disable AI-Native
+
+Set the `AI_NATIVE` environment variable:
+
+```bash
+# Enable AI-native (default)
+export AI_NATIVE=on
+
+# Disable AI-native
+export AI_NATIVE=off
+```
+
+#### API Endpoints
+
+**Get Narrative**
+```bash
+# Traditional Chinese (default)
+curl "http://localhost:8000/session/{session_id}/narrative?lang=zh-Hant"
+
+# English
+curl "http://localhost:8000/session/{session_id}/narrative?lang=en"
+
+# Override AI-native mode
+curl "http://localhost:8000/session/{session_id}/narrative?ai_native=off"
+```
+
+**Get Summary with Narrative**
+```bash
+# Include narrative field
+curl "http://localhost:8000/session/{session_id}/summary?ai_native=on"
+
+# Legacy summary (no narrative field)
+curl "http://localhost:8000/session/{session_id}/summary"
+```
+
+**Export with Narrative**
+```bash
+# Export with narrative (includes narrative.json)
+curl "http://localhost:8000/session/{session_id}/export?lang=en" -o session_export.zip
+```
+
+### Response Format
+
+#### Narrative Endpoint
+```json
+{
+  "lines": [
+    "第2圈節奏異常：配速130000ms，比中位數100500ms偏慢了3.0個標準差。",
+    "第2圈IM2a路段異常：通過時間45000ms，比中位數25000ms偏慢了2.8個標準差。",
+    "第2圈位置變化：5位→3位，上升了2個位置。"
+  ],
+  "lang": "zh-Hant",
+  "ai_native": true
+}
+```
+
+#### Summary Extension
+When `ai_native=on`, the summary response includes a `narrative` field with the same structure as the narrative endpoint.
+
+### Determinism
+
+The narrative generation is deterministic:
+- Same session data always produces the same narrative lines
+- Template selection uses hash-based indexing: `index = hash(event_id) % len(templates[type])`
+- No randomness is involved in the selection process
+
+### Fallback Behavior
+
+When `AI_NATIVE=off` or `ai_native=false`:
+- Uses rule-based templates with session statistics
+- Returns safe, predictable content
+- No AI-specific phrasing or variations
+
+### Supported Languages
+
+- **zh-Hant**: Traditional Chinese (default)
+- **en**: English
+
+Language affects all template text and fallback messages.

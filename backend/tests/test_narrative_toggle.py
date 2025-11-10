@@ -175,7 +175,7 @@ class TestNarrativeToggle:
         normal_top5 = top5_events(normal_bundle)
         
         # Generate narrative
-        result = build_narrative(normal_bundle, normal_top5, on=True)
+        result = build_narrative(normal_bundle, normal_top5, ai_native=True)
         
         # Should still return exactly 3 lines
         assert result["enabled"] is True
@@ -206,7 +206,7 @@ class TestNarrativeToggle:
             assert response.status_code == 200
             
             narrative = response.json()
-            assert narrative["enabled"] is False
+            assert narrative["ai_native"] is False
             assert narrative["lines"] == []
             
         finally:
@@ -239,7 +239,7 @@ class TestNarrativeToggle:
             assert response.status_code == 200
             
             narrative = response.json()
-            assert narrative["enabled"] is True
+            assert narrative["ai_native"] is True
             assert len(narrative["lines"]) == 3
             
             # Check that lines are non-empty strings
@@ -268,7 +268,7 @@ class TestNarrativeToggle:
         top5 = top5_events(bundle)
         
         # Test with AI_NATIVE on
-        result_on = build_narrative(bundle, top5, on=True)
+        result_on = build_narrative(bundle, top5, ai_native=True)
         assert result_on["enabled"] is True
         assert len(result_on["lines"]) == 3
         
@@ -280,7 +280,7 @@ class TestNarrativeToggle:
     def test_narrative_line_templates(self):
         """Test that narrative line templates are correctly applied."""
         # Generate narrative
-        result = build_narrative(self.bundle, self.top5_events, on=True)
+        result = build_narrative(self.bundle, self.top5_events, ai_native=True)
         
         lines = result["lines"]
         

@@ -455,12 +455,18 @@ async def get_session_sparklines(session_id: str) -> Dict[str, Any]:
 
 
 @app.get("/session/{session_id}/narrative")
-async def get_session_narrative(session_id: str) -> Dict[str, Any]:
+async def get_session_narrative(
+    session_id: str,
+    lang: str = Query("zh-Hant", description="Language for narrative (zh-Hant or en)"),
+    ai_native: str = Query("auto", description="AI-native mode (on/off/auto)")
+) -> Dict[str, Any]:
     """
     Get AI-native narrative for a session.
     
     Args:
         session_id: Session ID to retrieve narrative for
+        lang: Language code for narrative
+        ai_native: AI-native mode override
         
     Returns:
         Dictionary with narrative data
@@ -471,27 +477,40 @@ async def get_session_narrative(session_id: str) -> Dict[str, Any]:
     
     # Get AI-native setting
     settings = get_settings()
-    ai_native = settings.ai_native
+    
+    # Determine AI-native mode
+    if ai_native == "auto":
+        use_ai_native = settings.ai_native
+    else:
+        use_ai_native = ai_native.lower() in ("on", "true", "1", "yes", "enabled")
     
     # Get top 5 events for narrative
     top5 = top5_events(bundle)
     
-    # Build narrative
-    narrative = build_narrative(bundle, top5, ai_native)
+    # Build narrative using new v0.2 function
+    lines = build_narrative(bundle, top5, lang=lang, max_lines=3, ai_native=use_ai_native)
     
-    return narrative
+    return {
+        "lines": lines,
+        "lang": lang,
+        "ai_native": use_ai_native
+    }
 
 
 @app.get("/session/{session_id}/summary")
-async def get_session_summary(session_id: str) -> Dict[str, Any]:
+async def get_session_summary(
+    session_id: str,
+    ai_native: str = Query("auto", description="Include narrative in AI-native mode (on/off/auto)")
+) -> Dict[str, Any]:
     """
     Get comprehensive session summary with events, cards, and sparklines.
     
     Args:
         session_id: Session ID to retrieve summary for
+        ai_native: Whether to include narrative field
         
     Returns:
-        Dictionary with events, cards, and sparklines
+        Dictionary with events, cards, sparklines, and optionally narrative
     """
     bundle = store.get_bundle(session_id)
     if bundle is None:
@@ -506,21 +525,42 @@ async def get_session_summary(session_id: str) -> Dict[str, Any]:
     # Build sparklines
     sparklines = build_sparklines(bundle)
     
-    return {
+    # Base summary response
+    response = {
         "events": events,
         "cards": cards,
         "sparklines": sparklines
     }
+    
+    # Add narrative field only if ai_native=on
+    if ai_native.lower() in ("on", "true", "1", "yes", "enabled"):
+        # Get AI-native setting
+        settings = get_settings()
+        use_ai_native = settings.ai_native
+        
+        # Build narrative
+        lines = build_narrative(bundle, events, lang="zh-Hant", max_lines=3, ai_native=use_ai_native)
+        
+        response["narrative"] = {
+            "lines": lines,
+            "lang": "zh-Hant",
+            "ai_native": use_ai_native
+        }
+    
+    return response
 
 
 @app.get("/session/{session_id}/export")
-async def get_session_export(session_id: str, lang: str = Query("zh-Hant", description="Language for coaching tips")) -> Response:
+async def get_session_export(
+    session_id: str,
+    lang: str = Query("zh-Hant", description="Language for coaching tips and narrative")
+) -> Response:
     """
     Get session export pack as ZIP file.
     
     Args:
         session_id: Session ID to export
-        lang: Language for coaching tips ("zh-Hant" or "en")
+        lang: Language for coaching tips and narrative ("zh-Hant" or "en")
         
     Returns:
         ZIP file containing all session data
@@ -540,6 +580,15 @@ async def get_session_export(session_id: str, lang: str = Query("zh-Hant", descr
     
     # Build coaching tips
     coach_tips_data = coach_tips(bundle, events, lang=lang)
+    
+    # Build narrative for export
+    settings = get_settings()
+    narrative_lines = build_narrative(bundle, events, lang=lang, max_lines=3, ai_native=settings.ai_native)
+    narrative_data = {
+        "lines": narrative_lines,
+        "lang": lang,
+        "ai_native": settings.ai_native
+    }
     
     # Build KPIs
     total_laps = len(bundle.laps)
@@ -596,6 +645,9 @@ async def get_session_export(session_id: str, lang: str = Query("zh-Hant", descr
         
         # Add sparklines.json
         zip_file.writestr("sparklines.json", json.dumps(sparklines, ensure_ascii=False, indent=2))
+        
+        # Add narrative.json
+        zip_file.writestr("narrative.json", json.dumps(narrative_data, ensure_ascii=False, indent=2))
         
         # Add kpis.json
         zip_file.writestr("kpis.json", json.dumps(kpis, ensure_ascii=False, indent=2))
