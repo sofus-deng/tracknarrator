@@ -1,4 +1,5 @@
 # Track Narrator
+![Backend CI](https://github.com/TrackNarrator/backend/workflows/backend-ci/badge.svg)
 
 FastAPI backend for racing data import and analysis.
 

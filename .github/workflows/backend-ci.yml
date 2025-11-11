@@ -1,0 +1,68 @@
+name: backend-ci
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "demo/**"
+      - "scripts/**"
+      - "docs/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "demo/**"
+      - "scripts/**"
+      - "docs/**"
+      - ".github/workflows/**"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.local/share/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('backend/pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+      - name: Run tests
+        working-directory: backend
+        run: uv run pytest -q
+      - name: Acceptance (steps 3-7)
+        working-directory: backend
+        run: |
+          ../scripts/accept_step3.sh
+          ../scripts/accept_step4.sh
+          ../scripts/accept_step5.sh
+          ../scripts/accept_step6.sh
+          ../scripts/accept_step7.sh
+      - name: Upload demo artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-export
+          path: |
+            demo/export/summary.json
+            demo/export/export_zh.zip
+            demo/export/export_en.zip
+          if-no-files-found: ignore
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  pull-requests: write
