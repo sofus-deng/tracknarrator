@@ -2,6 +2,7 @@
 
 import io
 import json
+import time
 import zipfile
 from typing import Dict, Any, Union
 
@@ -9,7 +10,8 @@ from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Bo
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
-from .config import get_settings
+from .config import get_settings, SHARE_TTL_S_DEFAULT
+from .share import sign_share_token, verify_share_token
 from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
 from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
@@ -875,3 +877,132 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
         },
     )
 # === end resilient error handlers ===
+
+
+@app.post("/share/{session_id}")
+async def create_share_token(
+    session_id: str,
+    ttl_s: int = Query(default=SHARE_TTL_S_DEFAULT, description="Time to live in seconds")
+) -> Dict[str, Any]:
+    """
+    Create a shareable token for a session.
+    
+    Args:
+        session_id: Session ID to create share token for
+        ttl_s: Time to live in seconds (default from config)
+        
+    Returns:
+        Dictionary with token, expiration timestamp, and share URL
+    """
+    # Verify session exists
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Create token with expiration
+    exp_ts = int(time.time()) + ttl_s
+    token = sign_share_token(session_id, exp_ts)
+    
+    # Return token and metadata
+    return {
+        "token": token,
+        "expire_at": exp_ts,
+        "url": f"/shared/{token}/summary"
+    }
+
+
+@app.get("/shared/{token}/summary")
+async def get_shared_summary(
+    token: str,
+    ai_native: str = Query("auto", description="Include narrative in AI-native mode (on/off/auto)"),
+    lang: str = Query("zh-Hant", description="Language for narrative (zh-Hant or en)")
+) -> Dict[str, Any]:
+    """
+    Get session summary via share token.
+    
+    Args:
+        token: Share token
+        ai_native: Whether to include narrative field
+        lang: Language for narrative
+        
+    Returns:
+        Session summary data
+    """
+    # Verify token
+    is_valid, session_id, error = verify_share_token(token)
+    if not is_valid:
+        if error == "expired":
+            raise HTTPException(status_code=410, detail="Share link has expired")
+        elif error == "bad_signature":
+            raise HTTPException(status_code=401, detail="Invalid share link")
+        else:
+            raise HTTPException(status_code=400, detail="Malformed share link")
+    
+    # Get session bundle
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Get top 5 events
+    events = top5_events(bundle)
+    
+    # Build share cards
+    cards = build_share_cards(bundle)
+    
+    # Build sparklines
+    sparklines = build_sparklines(bundle)
+    
+    # Build KPIs
+    total_laps = len(bundle.laps)
+    best_lap_ms = min([lap.laptime_ms for lap in bundle.laps if lap.laptime_ms > 0], default=0)
+    
+    # Calculate median lap time
+    valid_lap_times = [lap.laptime_ms for lap in bundle.laps if lap.laptime_ms > 0]
+    if valid_lap_times:
+        sorted_times = sorted(valid_lap_times)
+        n = len(sorted_times)
+        if n % 2 == 0:
+            median_lap_ms = (sorted_times[n//2 - 1] + sorted_times[n//2]) / 2
+        else:
+            median_lap_ms = sorted_times[n//2]
+    else:
+        median_lap_ms = 0
+    
+    # Calculate session duration (if we have telemetry timestamps)
+    session_duration_ms = 0
+    if bundle.telemetry:
+        timestamps = [t.ts_ms for t in bundle.telemetry if t.ts_ms is not None]
+        if timestamps:
+            session_duration_ms = max(timestamps) - min(timestamps)
+    
+    kpis = {
+        "total_laps": total_laps,
+        "best_lap_ms": best_lap_ms,
+        "median_lap_ms": median_lap_ms,
+        "session_duration_ms": session_duration_ms
+    }
+    
+    # Base summary response
+    response = {
+        "events": events,
+        "cards": cards,
+        "sparklines": sparklines,
+        "kpis": kpis
+    }
+    
+    # Add narrative field only if ai_native=on
+    if ai_native.lower() in ("on", "true", "1", "yes", "enabled"):
+        # Get AI-native setting
+        settings = get_settings()
+        use_ai_native = settings.ai_native
+        
+        # Build narrative
+        lines = build_narrative(bundle, events, lang=lang, max_lines=3, ai_native=use_ai_native)
+        
+        response["narrative"] = {
+            "lines": lines,
+            "lang": lang,
+            "ai_native": use_ai_native
+        }
+    
+    return response

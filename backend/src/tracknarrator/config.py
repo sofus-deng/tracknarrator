@@ -7,6 +7,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+# Share configuration defaults
+SHARE_SECRET: str = os.getenv("TN_SHARE_SECRET", "dev-share-secret")
+SHARE_TTL_S_DEFAULT: int = int(os.getenv("TN_SHARE_TTL_S", "86400"))  # 1 day
+
+
 class Settings(BaseModel):
     """Application settings."""
     

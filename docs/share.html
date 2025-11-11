@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TrackNarrator Share</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <main class="container">
+    <h1>Shared Session</h1>
+    <p class="muted">Open with ?token=... or paste a token.</p>
+    <section class="controls"><input id="tok" placeholder="paste token"
+        style="flex:1;padding:10px;border-radius:10px;border:1px solid #243040" /><button
+        id="loadBtn">Load</button><span id="status" class="muted"></span></section>
+    <section id="kpis" class="kpis hidden"></section>
+    <section>
+      <h2>Top Events & Share Cards</h2>
+      <div id="cards" class="grid"></div>
+    </section>
+    <section>
+      <h2>Laps</h2>
+      <div id="laps" class="scroll"></div>
+    </section>
+  </main>
+  <script src="share.js"></script>
+</body>
+
+</html>

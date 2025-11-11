@@ -53,6 +53,10 @@ jobs:
           ../scripts/accept_step7.sh
           ../scripts/accept_step8.sh
           ../scripts/accept_step9.sh
+      - name: Acceptance (step 10)
+        working-directory: backend
+        run: |
+          ../scripts/accept_step10.sh
       - name: Upload demo artifacts
         if: always()
         uses: actions/upload-artifact@v4
