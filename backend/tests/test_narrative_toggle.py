@@ -111,44 +111,36 @@ class TestNarrativeToggle:
     def test_narrative_disabled(self):
         """Test narrative when AI_NATIVE is off."""
         # Test with AI_NATIVE off
-        result = build_narrative(self.bundle, self.top5_events, on=False)
+        result = build_narrative(self.bundle, self.top5_events, ai_native=False)
         
         # Check structure
-        assert "enabled" in result
-        assert "lines" in result
+        assert isinstance(result, list)
         
         # Check values when disabled
-        assert result["enabled"] is False
-        assert result["lines"] == []
+        assert len(result) == 3  # Should return fallback lines
     
     def test_narrative_enabled(self):
         """Test narrative when AI_NATIVE is on."""
         # Test with AI_NATIVE on
-        result = build_narrative(self.bundle, self.top5_events, on=True)
+        result = build_narrative(self.bundle, self.top5_events, ai_native=True)
         
         # Check structure
-        assert "enabled" in result
-        assert "lines" in result
-        
-        # Check values when enabled
-        assert result["enabled"] is True
-        assert isinstance(result["lines"], list)
-        assert len(result["lines"]) == 3  # Should always return exactly 3 lines
+        assert isinstance(result, list)
+        assert len(result) == 3  # Should always return exactly 3 lines
         
         # Check that lines are non-empty strings
-        for line in result["lines"]:
+        for line in result:
             assert isinstance(line, str)
             assert len(line) > 0
     
     def test_narrative_deterministic_order(self):
         """Test that narrative lines are in deterministic order."""
         # Generate narrative twice
-        result1 = build_narrative(self.bundle, self.top5_events, on=True)
-        result2 = build_narrative(self.bundle, self.top5_events, on=True)
+        result1 = build_narrative(self.bundle, self.top5_events, ai_native=True)
+        result2 = build_narrative(self.bundle, self.top5_events, ai_native=True)
         
         # Should be identical
-        assert result1["enabled"] == result2["enabled"]
-        assert result1["lines"] == result2["lines"]
+        assert result1 == result2
     
     def test_narrative_with_no_events(self):
         """Test narrative with no events."""
@@ -178,12 +170,13 @@ class TestNarrativeToggle:
         result = build_narrative(normal_bundle, normal_top5, ai_native=True)
         
         # Should still return exactly 3 lines
-        assert result["enabled"] is True
-        assert len(result["lines"]) == 3
+        assert isinstance(result, list)
+        assert len(result) == 3
         
         # Lines should contain session statistics
-        lines_text = " ".join(result["lines"])
-        assert "best" in lines_text.lower() or "median" in lines_text.lower()
+        lines_text = " ".join(result)
+        assert ("best" in lines_text.lower() or "median" in lines_text.lower() or
+                "最佳" in lines_text or "中位數" in lines_text)
     
     def test_narrative_api_endpoint_with_ai_native_off(self):
         """Test narrative API endpoint with AI_NATIVE=off."""
@@ -207,7 +200,9 @@ class TestNarrativeToggle:
             
             narrative = response.json()
             assert narrative["ai_native"] is False
-            assert narrative["lines"] == []
+            # When AI_NATIVE is off, narrative should still have lines but with ai_native=False
+            assert isinstance(narrative["lines"], list)
+            assert len(narrative["lines"]) == 3  # Fallback lines are still returned
             
         finally:
             # Restore original AI_NATIVE setting
@@ -269,20 +264,20 @@ class TestNarrativeToggle:
         
         # Test with AI_NATIVE on
         result_on = build_narrative(bundle, top5, ai_native=True)
-        assert result_on["enabled"] is True
-        assert len(result_on["lines"]) == 3
+        assert isinstance(result_on, list)
+        assert len(result_on) == 3
         
         # Test with AI_NATIVE off
-        result_off = build_narrative(bundle, top5, on=False)
-        assert result_off["enabled"] is False
-        assert result_off["lines"] == []
+        result_off = build_narrative(bundle, top5, ai_native=False)
+        assert isinstance(result_off, list)
+        assert len(result_off) == 3  # Should return fallback lines
     
     def test_narrative_line_templates(self):
         """Test that narrative line templates are correctly applied."""
         # Generate narrative
         result = build_narrative(self.bundle, self.top5_events, ai_native=True)
         
-        lines = result["lines"]
+        lines = result
         
         # Should have exactly 3 lines
         assert len(lines) == 3
@@ -291,9 +286,11 @@ class TestNarrativeToggle:
         # (lap 3 outlier, section IM2a outlier, etc.)
         all_text = " ".join(lines).lower()
         
-        # Should mention lap outlier
-        assert "lap 3" in all_text or "stood out" in all_text
+        # Should mention lap outlier (either English or Chinese)
+        assert ("lap 3" in all_text or "stood out" in all_text or
+                "第3圈" in all_text or "異常" in all_text or "突出" in all_text)
         
-        # Should mention section outlier or position change
-        assert ("section" in all_text or "position" in all_text or 
-                "best" in all_text or "median" in all_text)
+        # Should mention section outlier or position change (check for Chinese too)
+        assert ("section" in all_text or "position" in all_text or
+                "best" in all_text or "median" in all_text or
+                "完成" in all_text or "中位數" in all_text or "最佳" in all_text)

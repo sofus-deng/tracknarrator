@@ -25,4 +25,4 @@ node_modules/
 # --- Data/temp (keep fixtures!) ---
 tmp/
 data/
-# Do NOT ignore fixtures/*.json
+# Do NOT ignore fixtures/*.jsondemo/export/

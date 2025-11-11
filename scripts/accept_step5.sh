@@ -18,33 +18,42 @@ echo "Step 2: Skipping Step 3 acceptance (already verified in test suite)"
 
 # Step 3: Running Step 4 acceptance...
 echo "Step 3: Running Step 4 acceptance..."
-if ! ../scripts/accept_step4.sh; then
+cd ..
+if ! ./scripts/accept_step4.sh; then
     echo "ERROR: Step 4 acceptance failed"
     exit 1
 fi
+cd backend
 
 # Step 4: Testing Step 5 acceptance...
 echo "Step 4: Testing Step 5 acceptance..."
 
-# Start dev server in background
-echo "Starting dev server..."
-cd backend
-make dev &
-SERVER_PID=$!
-echo "Server PID: $SERVER_PID"
-
-# Wait for server to start
-sleep 3
+# Check if server is already running
+if curl -s http://localhost:8000/health > /dev/null; then
+    echo "Server already running"
+    SERVER_PID=""
+else
+    # Start dev server in background
+    echo "Starting dev server..."
+    make dev &
+    SERVER_PID=$!
+    echo "Server PID: $SERVER_PID"
+    
+    # Wait for server to start
+    sleep 3
+fi
 
 # Seed test data
 echo "Seeding test data..."
 curl -s -X POST http://localhost:8000/dev/seed \
   -H "Content-Type: application/json" \
-  -d @fixtures/bundle_sample_barber.json > /dev/null
+  -d @../fixtures/bundle_sample_barber.json > /dev/null
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to seed test data"
-    kill $SERVER_PID 2>/dev/null
+    if [ -n "$SERVER_PID" ]; then
+        kill $SERVER_PID 2>/dev/null
+    fi
     exit 1
 fi
 
@@ -53,7 +62,9 @@ echo "Testing /session/{id}/summary endpoint..."
 SUMMARY_RESPONSE=$(curl -s http://localhost:8000/session/barber-demo-r1/summary)
 if [ $? -ne 0 ]; then
     echo "ERROR: Summary API test failed"
-    kill $SERVER_PID 2>/dev/null
+    if [ -n "$SERVER_PID" ]; then
+        kill $SERVER_PID 2>/dev/null
+    fi
     exit 1
 fi
 
@@ -61,7 +72,9 @@ fi
 echo "$SUMMARY_RESPONSE" | jq -e 'has("events") and has("cards") and has("sparklines")' > /dev/null
 if [ "$(echo "$SUMMARY_RESPONSE" | jq -e 'has("events") and has("cards") and has("sparklines")')" != "true" ]; then
     echo "ERROR: Summary API response missing required fields"
-    kill $SERVER_PID 2>/dev/null
+    if [ -n "$SERVER_PID" ]; then
+        kill $SERVER_PID 2>/dev/null
+    fi
     exit 1
 fi
 
@@ -70,7 +83,9 @@ echo "Testing /session/{id}/export endpoint..."
 EXPORT_RESPONSE=$(curl -s -o /tmp/step5_export.zip http://localhost:8000/session/barber-demo-r1/export)
 if [ $? -ne 0 ]; then
     echo "ERROR: Export API test failed"
-    kill $SERVER_PID 2>/dev/null
+    if [ -n "$SERVER_PID" ]; then
+        kill $SERVER_PID 2>/dev/null
+    fi
     exit 1
 fi
 
@@ -78,19 +93,23 @@ fi
 echo "Checking export zip entries..."
 if [ ! -f "/tmp/step5_export.zip" ]; then
     echo "ERROR: Export file not created"
-    kill $SERVER_PID 2>/dev/null
+    if [ -n "$SERVER_PID" ]; then
+        kill $SERVER_PID 2>/dev/null
+    fi
     exit 1
 fi
 
 # Check zip file contents
 if command -v unzip >/dev/null 2>&1; then
-    ZIP_ENTRIES=$(unzip -l /tmp/step5_export.zip | tail -n +2 | head -n -1)
+    ZIP_ENTRIES=$(unzip -l /tmp/step5_export.zip | grep -E '\.json$' | awk '{print $4}')
     EXPECTED_ENTRIES="summary.json coach_tips.json events.json cards.json sparklines.json kpis.json"
     
     for entry in $EXPECTED_ENTRIES; do
         if ! echo "$ZIP_ENTRIES" | grep -q "$entry"; then
             echo "ERROR: Missing entry in export zip: $entry"
-            kill $SERVER_PID 2>/dev/null
+            if [ -n "$SERVER_PID" ]; then
+                kill $SERVER_PID 2>/dev/null
+            fi
             exit 1
         fi
     done
@@ -115,7 +134,9 @@ except Exception as e:
     CHECK_RESULT=$?
     if [ $CHECK_RESULT -ne 0 ]; then
         echo "ERROR: Failed to validate export zip entries"
-        kill $SERVER_PID 2>/dev/null
+        if [ -n "$SERVER_PID" ]; then
+            kill $SERVER_PID 2>/dev/null
+        fi
         exit 1
     fi
 fi
@@ -124,9 +145,11 @@ fi
 echo "Cleaning up..."
 rm -f /tmp/step5_export.zip
 
-# Stop server cleanly
-echo "Stopping server cleanly..."
-kill $SERVER_PID 2>/dev/null
-wait $SERVER_PID 2>/dev/null
+# Stop server cleanly if we started it
+if [ -n "$SERVER_PID" ]; then
+    echo "Stopping server cleanly..."
+    kill $SERVER_PID 2>/dev/null
+    wait $SERVER_PID 2>/dev/null
+fi
 
 echo "All acceptance checks passed!"

@@ -1,6 +1,6 @@
 [project]
 name = "tracknarrator"
-version = "0.0.1"
+version = "0.2.0"
 description = "Track Narrator - FastAPI backend for racing data import and analysis"
 authors = [{ name = "Track Narrator Team" }]
 readme = "README.md"

@@ -19,3 +19,6 @@ clean:
 	rm -rf .coverage htmlcov/ .pytest_cache/ dist/ *.egg-info/
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
+
+demo:
+	bash demo/run_demo.sh

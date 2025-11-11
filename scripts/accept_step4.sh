@@ -24,9 +24,8 @@ if curl -s http://localhost:8000/health > /dev/null 2>&1; then
     SERVER_PID=""
 else
     echo "Starting server..."
-    cd backend && make dev &
+    make dev &
     SERVER_PID=$!
-    cd ..
     # Wait for server to start
     sleep 3
 fi
