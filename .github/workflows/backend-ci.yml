@@ -43,7 +43,7 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: uv run pytest -q
-      - name: Acceptance (steps 3-7)
+      - name: Acceptance (steps 3-9)
         working-directory: backend
         run: |
           ../scripts/accept_step3.sh
@@ -51,6 +51,8 @@ jobs:
           ../scripts/accept_step5.sh
           ../scripts/accept_step6.sh
           ../scripts/accept_step7.sh
+          ../scripts/accept_step8.sh
+          ../scripts/accept_step9.sh
       - name: Upload demo artifacts
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,42 @@
+[project]
+name = "tracknarrator"
+version = "0.2.1"
+description = "Track Narrator - FastAPI backend for racing data import and analysis"
+authors = [{ name = "Track Narrator Team" }]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic>=2",
+  "python-multipart",
+  "requests",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-cov"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-q --cov=src/tracknarrator --cov-report=term-missing --cov-fail-under=79"
+
+[tool.coverage.run]
+source = ["src/tracknarrator"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "def __repr__",
+  "raise AssertionError",
+  "raise NotImplementedError",
+]
+
+[dependency-groups]
+dev = ["httpx>=0.28.1", "pytest>=8.4.2", "pytest-cov>=7.0.0"]

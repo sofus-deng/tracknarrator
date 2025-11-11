@@ -1,0 +1,4 @@
+# 90-second Voiceover (EN)
+0–20s — Problem. Racing telemetry is rich but unreadable. Judges and teams need a reproducible, language-friendly summary that works offline.
+20–60s — Solution. We normalize CSV/GPX, detect outliers into ranked events, render five share-cards, produce deterministic narrative lines (ai_native on/off), attach coaching tips, and export a JSON pack. Everything is unit-tested (coverage ≥79%) and reproducible via "make demo".
+60–90s — Why it matters. Deterministic outputs enable fair judging and regression. Multilingual surfaces help international teams. Export-first design lets partners build on top. Try: make demo, open docs/index.html, or call /session/{id}/export.

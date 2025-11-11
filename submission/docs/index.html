@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrackNarrator Showcase</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <main class="container">
+    <h1>TrackNarrator Showcase</h1>
+    <p class="muted">Open-source demo reader for <code>demo/export/summary.json</code>. Run <code>make demo</code>
+      first.</p>
+
+    <section class="controls">
+      <button id="loadBtn">Load summary.json</button>
+      <span id="status" class="muted"></span>
+    </section>
+
+    <section id="kpis" class="kpis hidden"></section>
+    <section>
+      <h2>Top Events & Share Cards</h2>
+      <div id="cards" class="grid"></div>
+    </section>
+
+    <section>
+      <h2>Laps</h2>
+      <div id="laps" class="scroll"></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+
+</html>
