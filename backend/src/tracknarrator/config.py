@@ -39,3 +39,6 @@ ROBUST_Z_LAP = 2.5
 ROBUST_Z_SECTION = 2.8
 EVENT_TYPE_ORDER = ["lap_outlier", "section_outlier", "position_change"]
 DEFAULT_SECTION_LABELS = ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
+
+# Database path configuration
+TN_DB_PATH = os.getenv("TN_DB_PATH", "tracknarrator.db")

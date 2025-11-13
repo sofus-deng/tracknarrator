@@ -8,6 +8,11 @@
 - `POST /ingest/trd-long` - Import TRD telemetry CSV
 - `POST /ingest/racechrono` - Import RaceChrono CSV
 - `POST /ingest/weather` - Import weather CSV
+- `POST /upload` - Upload file (CSV, GPX, or ZIP containing supported files)
+
+### Session Management
+- `GET /sessions?limit=&offset=` - List all sessions with pagination
+- `DELETE /session/{id}` - Delete a session by ID
 
 ### Analysis & Export
 - `GET /session/{id}/summary?ai_native=on|off` - Session summary with optional AI narrative
@@ -50,6 +55,23 @@ curl "http://localhost:8000/session/barber-demo-r1/export?lang=zh-Hant" \
 ```bash
 curl "http://localhost:8000/session/barber-demo-r1/export?lang=en" \
   -o export_en.zip
+```
+
+### Upload File
+```bash
+curl -X POST "http://localhost:8000/upload" \
+  -F "file=@data.csv" \
+  -F "name=My Session"
+```
+
+### List Sessions
+```bash
+curl "http://localhost:8000/sessions?limit=10" | jq .
+```
+
+### Delete Session
+```bash
+curl -X DELETE "http://localhost:8000/session/barber-demo-r1"
 ```
 
 ## Response Examples

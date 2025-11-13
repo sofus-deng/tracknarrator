@@ -10,3 +10,6 @@ Run locally in ~90 seconds.
 ```bash
 make demo
 # outputs -> demo/export/summary.json, export_zh.zip, export_en.zip
+
+## Session Management
+List sessions: `curl -s localhost:8000/sessions | jq .`

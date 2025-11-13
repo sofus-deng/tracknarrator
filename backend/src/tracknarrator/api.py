@@ -16,7 +16,9 @@ from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
 from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
 from .importers.racechrono_csv import RaceChronoCSVImporter
+from .importers.gpx import sniff_gpx, parse_gpx_to_bundle
 from .store import store
+from .storage import init_db, upsert_session, list_sessions, delete_session, get_session_bundle
 from .schema import SessionBundle
 from .events import detect_events, top5_events, build_sparklines
 from .narrative import build_narrative
@@ -27,6 +29,9 @@ from .coach import coach_tips
 MAX_BYTES = 2 * 1024 * 1024  # 2MB guard
 MAX_RACECHRONO_BYTES = 10 * 1024 * 1024  # 10MB guard for RaceChrono
 
+
+# Initialize database on module import
+init_db()
 
 # Create FastAPI app
 app = FastAPI(
@@ -367,10 +372,14 @@ async def dev_seed(
         sid = bundle.session.id
         counts, warnings = store.merge_bundle(sid, bundle, src="dev_seed_json")
         
+        # Also persist to storage
+        storage_session_id = upsert_session(bundle.model_dump(), name=f"seed_{sid}")
+        
         return {
             "ok": True,
             "mode": "json",
             "session_id": sid,
+            "storage_session_id": storage_session_id,
             "counts": counts,
             "warnings": warnings
         }
@@ -396,10 +405,14 @@ async def dev_seed(
         sid = bundle.session.id
         counts, warnings = store.merge_bundle(sid, bundle, src="dev_seed_file")
         
+        # Also persist to storage
+        storage_session_id = upsert_session(bundle.model_dump(), name=f"seed_{sid}")
+        
         return {
             "ok": True,
             "mode": "file",
             "session_id": sid,
+            "storage_session_id": storage_session_id,
             "counts": counts,
             "warnings": warnings
         }
@@ -1006,3 +1019,199 @@ async def get_shared_summary(
         }
     
     return response
+
+
+@app.get("/sessions")
+async def get_sessions(
+    limit: int = Query(50, description="Maximum number of sessions to return"),
+    offset: int = Query(0, description="Number of sessions to skip")
+) -> Dict[str, Any]:
+    """
+    Get list of all sessions.
+    
+    Args:
+        limit: Maximum number of sessions to return
+        offset: Number of sessions to skip
+        
+    Returns:
+        Dictionary with list of sessions
+    """
+    sessions = list_sessions(limit=limit, offset=offset)
+    return {"sessions": sessions}
+
+
+@app.delete("/session/{session_id}")
+async def delete_session_endpoint(session_id: str) -> Response:
+    """
+    Delete a session by ID.
+    
+    Args:
+        session_id: Session ID to delete
+        
+    Returns:
+        204 on success, 404 if not found
+    """
+    success = delete_session(session_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Also remove from in-memory store if applicable
+    if session_id in store.sessions:
+        del store.sessions[session_id]
+    
+    return Response(status_code=204)
+
+
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(..., description="File to upload (CSV, GPX, or ZIP)"),
+    name: str = Query(None, description="Optional name for the session"),
+    tz: str = Query(None, description="Optional timezone for the session")
+) -> Dict[str, Any]:
+    """
+    Upload a file for processing.
+    
+    Accepts:
+    - .csv (RaceChrono or TRD long format)
+    - .gpx (GPS track files)
+    - .zip (containing supported files, picks first recognizable)
+    
+    Args:
+        file: File to upload
+        name: Optional name for the session
+        tz: Optional timezone for the session
+        
+    Returns:
+        Dictionary with session_id on success
+    """
+    try:
+        # Read file content
+        content = await file.read()
+        filename = file.filename or ""
+        
+        # Check if it's a ZIP file
+        if filename.lower().endswith('.zip'):
+            # Process ZIP file
+            with zipfile.ZipFile(io.BytesIO(content)) as zip_file:
+                # Try to find a supported file in the ZIP
+                for zip_info in zip_file.infolist():
+                    zip_name = zip_info.filename.lower()
+                    if zip_name.endswith('.csv'):
+                        # Try to process as CSV
+                        zip_content = zip_file.read(zip_info.filename)
+                        if zip_content:
+                            # Try RaceChrono first
+                            try:
+                                result = RaceChronoCSVImporter.import_file(
+                                    io.BytesIO(zip_content),
+                                    f"zip_{int(time.time()*1000)}"
+                                )
+                                if result.bundle:
+                                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                                    return {"session_id": session_id}
+                            except:
+                                pass
+                            
+                            # Try TRD long CSV
+                            try:
+                                result = TRDLongCSVImporter.import_file(
+                                    io.BytesIO(zip_content),
+                                    f"zip_{int(time.time()*1000)}"
+                                )
+                                if result.bundle:
+                                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                                    return {"session_id": session_id}
+                            except:
+                                pass
+                    elif zip_name.endswith('.gpx'):
+                        # Try GPX
+                        zip_content = zip_file.read(zip_info.filename)
+                        if zip_content:
+                            try:
+                                bundle = parse_gpx_to_bundle(
+                                    zip_content,
+                                    session_id=f"zip_{int(time.time()*1000)}",
+                                    name=name
+                                )
+                                session_id = upsert_session(bundle.model_dump(), name=name)
+                                return {"session_id": session_id}
+                            except:
+                                pass
+                
+                raise HTTPException(
+                    status_code=400,
+                    detail="No supported files found in ZIP"
+                )
+        
+        # Check if it's a GPX file
+        elif filename.lower().endswith('.gpx') or sniff_gpx(content):
+            try:
+                bundle = parse_gpx_to_bundle(
+                    content,
+                    session_id=f"gpx_{int(time.time()*1000)}",
+                    name=name
+                )
+                session_id = upsert_session(bundle.model_dump(), name=name)
+                return {"session_id": session_id}
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to process GPX file: {str(e)}"
+                )
+        
+        # Check if it's a CSV file
+        elif filename.lower().endswith('.csv'):
+            # Try RaceChrono first
+            try:
+                result = RaceChronoCSVImporter.import_file(
+                    io.BytesIO(content),
+                    f"csv_{int(time.time()*1000)}"
+                )
+                if result.bundle:
+                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                    return {"session_id": session_id}
+            except:
+                pass
+            
+            # Try TRD long CSV
+            try:
+                result = TRDLongCSVImporter.import_file(
+                    io.BytesIO(content),
+                    f"csv_{int(time.time()*1000)}"
+                )
+                if result.bundle:
+                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                    return {"session_id": session_id}
+            except:
+                pass
+            
+            # Try MYLAPS sections CSV
+            try:
+                result = MYLAPSSectionsCSVImporter.import_file(
+                    io.BytesIO(content),
+                    f"csv_{int(time.time()*1000)}"
+                )
+                if result.bundle:
+                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                    return {"session_id": session_id}
+            except:
+                pass
+            
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to process CSV file with any known format"
+            )
+        
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file type; expected RaceChrono/TRD CSV, GPX, or ZIP"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing file: {str(e)}"
+        )
