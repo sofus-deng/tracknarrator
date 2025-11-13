@@ -24,6 +24,7 @@ from .events import detect_events, top5_events, build_sparklines
 from .narrative import build_narrative
 from .cards import build_share_cards
 from .coach import coach_tips
+from .viz import lap_deltas, section_box_stats
 
 # Constants for seed endpoint
 MAX_BYTES = 2 * 1024 * 1024  # 2MB guard
@@ -467,6 +468,56 @@ async def get_session_sparklines(session_id: str) -> Dict[str, Any]:
     sparklines = build_sparklines(bundle)
     
     return sparklines
+
+
+@app.get("/session/{session_id}/viz")
+async def get_viz(session_id: str) -> Dict[str, Any]:
+    """
+    Returns visualization-ready series derived from existing sparklines payload.
+    Shape:
+    {
+      "lap_delta_series": [{"lap_no": int, "lap_ms": number, "delta_ms_to_median": number, "delta_ma3": number}, ...],
+      "section_box": [{"section_no": int, "p10": num, "p25": num, "p50": num, "p75": num, "p90": num, "best_ms": num}, ...]
+    }
+    """
+    # Reuse your existing summary builder to fetch sparklines
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Build sparklines
+    sparklines = build_sparklines(bundle)
+    
+    # Extract data for visualization
+    laps_ms = sparklines.get("laps_ms") or []
+    sections = sparklines.get("sections_ms") or []
+    
+    # Convert laps_ms to expected format for lap_deltas
+    laps_formatted = []
+    for i, lap_ms in enumerate(laps_ms):
+        laps_formatted.append({"lap_no": i+1, "lap_ms": lap_ms})
+    
+    # Convert sections_ms to expected format for section_box_stats
+    # sections_ms is a dict with section names as keys, convert to 2D list
+    sections_list = []
+    if sections:
+        # Find the maximum number of laps across all sections
+        max_laps = max(len(values) for values in sections.values()) if sections else 0
+        
+        # Create 2D array [laps][sections]
+        for lap_idx in range(max_laps):
+            lap_sections = []
+            for section_name in sorted(sections.keys()):
+                if lap_idx < len(sections[section_name]):
+                    lap_sections.append(sections[section_name][lap_idx])
+                else:
+                    lap_sections.append(None)
+            sections_list.append(lap_sections)
+    
+    return {
+        "lap_delta_series": lap_deltas(laps_formatted),
+        "section_box": section_box_stats(sections_list),
+    }
 
 
 @app.get("/session/{session_id}/narrative")

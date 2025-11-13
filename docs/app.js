@@ -90,3 +90,40 @@ function copyShareUrl() {
 
 document.getElementById('shareBtn').addEventListener('click', createShareLink);
 document.getElementById('copyBtn').addEventListener('click', copyShareUrl);
+
+// Language and visualization functions
+function getLang() { const sel = document.getElementById('langSel'); return sel ? sel.value : 'zh-Hant'; }
+async function fetchViz() {
+  try {
+    // Try to infer session id from the already loaded summary.json path. Fallback: call /sessions to get latest.
+    const res = await fetch('../sessions'); // backend served locally during demo
+    const sessions = res.ok ? await res.json() : [];
+    const sid = sessions && sessions.length ? sessions[0].session_id : null;
+    if (!sid) throw new Error('No session');
+    const v = await (await fetch(`../session/${encodeURIComponent(sid)}/viz`, { cache: 'no-store' })).json();
+    drawLapChart(v.lap_delta_series || []);
+  } catch (e) { console.error(e); }
+}
+function drawLapChart(series) {
+  const cv = document.getElementById('lapChart'); if (!cv || !series.length) return;
+  const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+  const W = cv.width, H = cv.height, pad = 28;
+  const xs = series.map(d => d.lap_no), ys = series.map(d => d.delta_ms_to_median);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const x = (v) => pad + (W - 2 * pad) * (v - xMin) / (xMax - xMin || 1);
+  const y = (v) => H - pad - (H - 2 * pad) * (v - minY) / ((maxY - minY) || 1);
+  // axes
+  ctx.strokeStyle = "#243040"; ctx.beginPath(); ctx.moveTo(pad, H - pad); ctx.lineTo(W - pad, H - pad); ctx.moveTo(pad, pad); ctx.lineTo(pad, H - pad); ctx.stroke();
+  // zero line
+  if (minY < 0 && maxY > 0) { ctx.strokeStyle = "#3a485a"; ctx.beginPath(); ctx.moveTo(pad, y(0)); ctx.lineTo(W - pad, y(0)); ctx.stroke(); }
+  // line
+  ctx.strokeStyle = "#64d2ff"; ctx.beginPath();
+  series.forEach((d, i) => { const xx = x(d.lap_no), yy = y(d.delta_ms_to_median); i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); });
+  ctx.stroke();
+  // moving average
+  ctx.strokeStyle = "#9ad46a"; ctx.beginPath();
+  series.forEach((d, i) => { const xx = x(d.lap_no), yy = y(d.delta_ma3); i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); });
+  ctx.stroke();
+}
+document.getElementById('vizBtn')?.addEventListener('click', fetchViz);
