@@ -27,6 +27,7 @@ from .narrative import build_narrative
 from .cards import build_share_cards
 from .coach import coach_tips
 from .viz import lap_deltas, section_box_stats
+from .coach_score import compute_coach_score
 
 # Constants for seed endpoint
 MAX_BYTES = 2 * 1024 * 1024  # 2MB guard
@@ -533,6 +534,20 @@ async def get_viz(session_id: str) -> Dict[str, Any]:
     }
 
 
+@app.get("/session/{session_id}/coach")
+def get_coach_score(session_id: str, lang: str = Query(default="zh-Hant")):
+    # reuse same summary/sparklines source to ensure determinism
+    bundle = store.get_bundle(session_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    # Build sparklines and get events for scoring
+    sparklines = build_sparklines(bundle)
+    events = top5_events(bundle)
+    
+    return compute_coach_score(sparklines, events, lang=lang)
+
+
 @app.get("/session/{session_id}/narrative")
 async def get_session_narrative(
     session_id: str,
@@ -730,6 +745,10 @@ async def get_session_export(
         
         # Add kpis.json
         zip_file.writestr("kpis.json", json.dumps(kpis, ensure_ascii=False, indent=2))
+        
+        # Add coach_score.json
+        coach_score = compute_coach_score(sparklines, events, lang=lang)
+        zip_file.writestr("coach_score.json", json.dumps(coach_score, ensure_ascii=False, separators=(",",":")))
     
     zip_buffer.seek(0)
     

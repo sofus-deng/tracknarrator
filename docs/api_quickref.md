@@ -18,6 +18,7 @@
 - `GET /session/{id}/summary?ai_native=on|off` - Session summary with optional AI narrative
 - `GET /session/{id}/narrative?lang=zh-Hant|en&ai_native=on|off` - AI-generated narrative
 - `GET /session/{id}/export?lang=zh-Hant|en` - Complete export ZIP package
+- `GET /session/{id}/coach?lang=zh-Hant|en` - Coach v1.5 scoring (0–100) with dimensions and badge. Deterministic; uses sparklines/events.
 - `GET /session/{id}/events` - Detected events
 - `GET /session/{id}/sparklines` - Sparkline data
 
@@ -138,6 +139,7 @@ curl "http://localhost:8000/shared/{token}/summary"
 - `cards.json` - Shareable social cards
 - `sparklines.json` - Telemetry sparklines
 - `kpis.json` - Key performance indicators
+- `coach_score.json` - Coach v1.5 scoring with dimensions and badge
 
 ## CORS Configuration
 

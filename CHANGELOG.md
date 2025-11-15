@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.9.0
+- feat(coach): add /session/{id}/coach with v1.5 scoring (0–100) and dimensions
+- feat(export): include coach_score.json in export pack
+- feat(viewer): add gauge canvas + loader button
+- chore: accept_step16.sh and CI integration
+
 ## v0.8.0
 - feat: docs/upload.html + upload.js (web uploader with one-click share)
 - feat: CORS support via TN_CORS_ORIGINS

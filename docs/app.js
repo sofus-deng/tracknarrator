@@ -152,3 +152,40 @@ async function loadSummaryAuto() {
 }
 // if page already had an init flow, keep it. Otherwise expose a helper:
 window.__tn_loadSummaryAuto = loadSummaryAuto;
+
+async function fetchCoach(){
+  try{
+    // Prefer live API sid if available; else demo file
+    const res = await fetch('../sessions'); // may fail on static; tolerate
+    let sid = null;
+    if(res.ok){ const arr = await res.json(); if(Array.isArray(arr) && arr.length) sid = arr[0].session_id; }
+    let data = null;
+    if(sid){
+      const r = await fetch(`../session/${encodeURIComponent(sid)}/coach?lang=${getLang()}`, {cache:'no-store'});
+      data = r.ok ? await r.json() : null;
+    }
+    if(!data){
+      const r = await fetch('./data/coach_score.json', {cache:'no-store'});
+      data = r.ok ? await r.json() : null;
+    }
+    if(data){ drawCoachGauge(data); }
+  }catch(e){ console.error(e); }
+}
+function drawCoachGauge(cs){
+  const cv = document.getElementById('coachGauge'); if(!cv) return;
+  const ctx = cv.getContext('2d'); const W=cv.width, H=cv.height; ctx.clearRect(0,0,W,H);
+  const cx=W/2, cy=H-10, r=Math.min(W, H*1.8)/2 - 14;
+  // arc background
+  ctx.lineWidth=16; ctx.strokeStyle="#243040"; ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,2*Math.PI); ctx.stroke();
+  // value arc
+  const v = Math.max(0, Math.min(100, Number(cs.total_score||0)));
+  const ang = Math.PI + (v/100)*Math.PI;
+  ctx.strokeStyle="#64d2ff"; ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,ang); ctx.stroke();
+  // text
+  ctx.fillStyle="#e6f2ff"; ctx.font="28px system-ui, sans-serif"; ctx.textAlign="center";
+  ctx.fillText(String(v), cx, cy-10);
+  const meta = document.getElementById('coachMeta');
+  const badge = cs.badge || '-';
+  meta.textContent = `badge: ${badge}`;
+}
+document.getElementById('coachBtn')?.addEventListener('click', fetchCoach);
