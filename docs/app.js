@@ -127,3 +127,28 @@ function drawLapChart(series) {
   ctx.stroke();
 }
 document.getElementById('vizBtn')?.addEventListener('click', fetchViz);
+
+function qs() { return new URLSearchParams(location.search); }
+async function loadSummaryAuto() {
+  try {
+    const p = qs();
+    if (p.get('token')) {
+      const t = p.get('token');
+      const r = await fetch(`../shared/${encodeURIComponent(t)}/summary?ai_native=off&lang=${getLang()}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error('shared fetch ' + r.status);
+      return await r.json();
+    }
+    if (p.get('sid')) {
+      const sid = p.get('sid');
+      const r = await fetch(`../session/${encodeURIComponent(sid)}/summary?ai_native=off&lang=${getLang()}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error('api fetch ' + r.status);
+      return await r.json();
+    }
+    // default: demo mode
+    const r = await fetch('./data/summary.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('demo fetch ' + r.status);
+    return await r.json();
+  } catch (e) { console.error(e); return { events: [], cards: [], sparklines: {} }; }
+}
+// if page already had an init flow, keep it. Otherwise expose a helper:
+window.__tn_loadSummaryAuto = loadSummaryAuto;

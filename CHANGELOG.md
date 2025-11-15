@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.7.0
+- docs: GitHub Pages auto-deploy with pages.yml
+- scripts: sync_demo_to_docs.sh + accept_step14.sh
+- viewer: app.js supports demo/token/sid data sources
+- demo: export copied to docs/data for static showcase
+
 ## [0.2.1] - 2025-11-11
 
 ### Added
