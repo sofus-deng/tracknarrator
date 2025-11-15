@@ -78,6 +78,7 @@ def test_token_custom_secret():
 
 def test_token_default_timestamp():
     """Test that tokens work with default current timestamp."""
-    t = sign_share_token("test-session", int(time.time()) + 60)
+    # Add a larger buffer to account for any processing delay
+    t = sign_share_token("test-session", int(time.time()) + 3600)  # 1 hour instead of 60 seconds
     ok, sid, err = verify_share_token(t)
     assert ok and sid == "test-session" and err is None

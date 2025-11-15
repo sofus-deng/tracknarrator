@@ -46,7 +46,11 @@ def init_db():
         )""")
 
 def upsert_session(bundle: Dict[str, Any], *, name: Optional[str]=None) -> str:
-    sid = bundle.get("session_id") or bundle.get("id") or f"s_{int(time.time()*1000)}"
+    # First check if there's a session object with an id
+    if "session" in bundle and "id" in bundle["session"]:
+        sid = bundle["session"]["id"]
+    else:
+        sid = bundle.get("session_id") or bundle.get("id") or f"s_{int(time.time()*1000)}"
     now = int(time.time())
     payload = json.dumps(bundle, separators=(",", ":"), ensure_ascii=False)
     with _db() as db:

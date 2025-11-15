@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrackNarrator Admin</title>
+  <link rel="stylesheet" href="/docs/styles.css" />
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    body {
+      background: #0b1117;
+      color: #e6f2ff;
+      font-family: system-ui, -apple-system, Segoe UI, Inter, sans-serif;
+      margin: 0;
+      padding: 20px
+    }
+
+    .card {
+      background: #0f141b;
+      border: 1px solid #243040;
+      border-radius: 14px;
+      padding: 16px;
+      margin: 12px 0
+    }
+
+    .btn {
+      padding: 8px 12px;
+      border: 1px solid #2a7bd8;
+      border-radius: 10px;
+      background: #133a63;
+      color: #e6f2ff;
+      cursor: pointer;
+      text-decoration: none
+    }
+
+    .muted {
+      color: #8ca0b3
+    }
+
+    .mono {
+      font-family: ui-monospace, Menlo, Consolas, monospace
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid #243040;
+      padding: 8px;
+      text-align: left
+    }
+
+    input[type=file],
+    input[type=text],
+    input[type=password] {
+      background: #0b1117;
+      border: 1px solid #243040;
+      border-radius: 8px;
+      padding: 8px;
+      color: #e6f2ff
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap
+    }
+  </style>
+</head>
+
+<body>
+  {% block body %}{% endblock %}
+</body>
+
+</html>

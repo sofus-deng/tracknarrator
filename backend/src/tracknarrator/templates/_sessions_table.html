@@ -1,0 +1,34 @@
+<table>
+  <thead>
+    <tr>
+      <th>Session</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in sessions %}
+    <tr>
+      <td class="mono">{{ s.session_id }}</td>
+      <td class="muted">{{ s.created_at }}</td>
+      <td>
+        <a class="btn" href="/docs/index.html?sid={{ s.session_id }}" target="_blank">Viewer</a>
+        <a class="btn" href="/session/{{ s.session_id }}/summary" target="_blank">Summary</a>
+        <a class="btn" href="/session/{{ s.session_id }}/coach" target="_blank">Coach</a>
+        <a class="btn" href="/session/{{ s.session_id }}/export" target="_blank">Export</a>
+        <button class="btn" hx-post="/ui/share/{{ s.session_id }}" hx-target="#shares-{{ s.session_id }}"
+          hx-swap="innerHTML">Create Share</button>
+        <button class="btn" hx-get="/ui/shares?session_id={{ s.session_id }}" hx-target="#shares-{{ s.session_id }}"
+          hx-swap="innerHTML">List Shares</button>
+        <button class="btn" hx-delete="/session/{{ s.session_id }}" hx-target="closest tr"
+          hx-swap="outerHTML">Delete</button>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="3">
+        <div id="shares-{{ s.session_id }}"></div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

@@ -1,7 +1,13 @@
 .PHONY: dev test e2e ci clean seed
 
 dev:
-	uv run uvicorn tracknarrator.api:app --host 0.0.0.0 --port 8000 --reload
+	@if [ -f "../.env" ]; then \
+		export $$(cat ../.env | xargs); \
+	fi
+	@if [ -z "$(TN_UI_KEY)" ]; then \
+		echo "TN_UI_KEY is not set, UI disabled"; exit 1; \
+	fi
+	TN_UI_KEY=$(TN_UI_KEY) uv run uvicorn tracknarrator.api:app --host 0.0.0.0 --port 8000 --reload
 
 test:
 	uv run pytest -q

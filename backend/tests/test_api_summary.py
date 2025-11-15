@@ -134,12 +134,13 @@ class TestSessionSummaryAPI:
     
     def test_get_session_summary_nonexistent_session(self):
         """Test summary endpoint with non-existent session."""
-        response = self.client.get("/session/nonexistent-session")
-        
+        response = self.client.get("/session/nonexistent-session/summary")
+    
         assert response.status_code == 404
         error_data = response.json()
-        assert "detail" in error_data
-        assert "not found" in error_data["detail"] or "Not Found" in error_data["detail"]
+        assert "error" in error_data
+        error_message = error_data["error"].get("message", "")
+        assert "not found" in error_message.lower() or "not found" in error_message.lower()
     
     def test_get_session_summary_consistency(self):
         """Test that summary endpoint is consistent with individual endpoints."""

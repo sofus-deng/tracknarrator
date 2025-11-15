@@ -6,14 +6,20 @@ import time
 import zipfile
 from typing import Dict, Any, Union
 
-from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Body
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Body, Form
+from fastapi.responses import JSONResponse, Response, HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from starlette.middleware.cors import CORSMiddleware
+from pathlib import Path
+import base64, json, hmac, hashlib, time
+import requests
 
 from .config import get_settings, SHARE_TTL_S_DEFAULT, TN_CORS_ORIGINS
-from .share import sign_share_token, verify_share_token, jti_from_token
-from .storage import list_shares as storage_list_shares, revoke_share as storage_revoke_share, add_share
+from .share import sign_share_token, verify_share_token, jti_from_token, SHARE_SECRET
+from .storage import list_shares as storage_list_shares, revoke_share as storage_revoke_share, add_share, list_sessions as storage_list_sessions
+from .ui_auth import sign_cookie, verify_cookie
+from .config import TN_UI_KEY
 from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
 from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
@@ -43,6 +49,7 @@ app = FastAPI(
     description="API for importing and managing racing data",
     version="0.0.1"
 )
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 # CORS: opt-in via env
 origins = [o.strip() for o in (TN_CORS_ORIGINS or "").split(",") if o.strip()]
@@ -54,6 +61,18 @@ if origins or TN_CORS_ORIGINS.strip() == "*":
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# ---------- UI auth guard ----------
+def _require_ui_enabled():
+    if not TN_UI_KEY:
+        raise HTTPException(status_code=404, detail="ui disabled")
+
+def _require_ui_auth(request: Request):
+    _require_ui_enabled()
+    cookie = request.cookies.get("tn_ui")
+    ok, _ = verify_cookie(cookie or "")
+    if not ok:
+        raise HTTPException(status_code=401, detail="auth required")
 
 
 @app.get("/health")
@@ -353,7 +372,7 @@ async def dev_seed(
     file: Union[UploadFile, None] = File(default=None)
 ) -> Dict[str, Any]:
     """
-    Seed the in-memory store with session data.
+    Seed in-memory store with session data.
     
     Accepts either:
     1. JSON body with SessionBundle
@@ -1323,3 +1342,92 @@ async def upload_file(
             status_code=500,
             detail=f"Error processing file: {str(e)}"
         )
+
+# ---------- UI login/logout ----------
+@app.get("/ui/login", response_class=HTMLResponse)
+def ui_login_form(request: Request):
+    _require_ui_enabled()
+    return templates.TemplateResponse(request, "login.html", {"error": None})
+
+@app.post("/ui/login")
+def ui_login(request: Request, key: str = Form(...)):
+    _require_ui_enabled()
+    if key != TN_UI_KEY:
+        return templates.TemplateResponse(request, "login.html", {"error": "invalid key"})
+    c = sign_cookie()
+    resp = RedirectResponse(url="/ui", status_code=302)
+    resp.set_cookie("tn_ui", c, httponly=True, samesite="lax", max_age=3600)
+    return resp
+
+@app.get("/ui/logout")
+def ui_logout():
+    resp = RedirectResponse(url="/ui/login", status_code=302)
+    resp.delete_cookie("tn_ui")
+    return resp
+
+# ---------- UI pages ----------
+@app.get("/ui", response_class=HTMLResponse)
+def ui_index(request: Request):
+    _require_ui_enabled()
+    # redirect to login if not authenticated
+    cookie = request.cookies.get("tn_ui") or ""
+    ok, _ = verify_cookie(cookie)
+    if not ok:
+        return RedirectResponse(url="/ui/login", status_code=302)
+    return templates.TemplateResponse(request, "ui.html", {})
+
+@app.get("/ui/sessions", response_class=HTMLResponse)
+def ui_sessions(request: Request):
+    _require_ui_auth(request)
+    items = storage_list_sessions()
+    return templates.TemplateResponse(request, "_sessions_table.html", {"sessions": items})
+
+@app.post("/ui/upload", response_class=HTMLResponse)
+def ui_upload(request: Request, file: UploadFile = File(...)):
+    _require_ui_auth(request)
+    # Forward to existing /upload endpoint via in-process request using stdlib 'requests' (already used elsewhere)
+    try:
+        import requests
+        files = {"file": (file.filename, file.file, file.content_type or "application/octet-stream")}
+        r = requests.post("http://127.0.0.1:8000/upload", files=files, timeout=15)
+        if r.status_code != 200:
+            return HTMLResponse(f"<div class='muted'>Upload failed: {r.status_code}</div>", status_code=200)
+        data = r.json()
+        sid = data.get("session_id") or "unknown"
+        return HTMLResponse(f"<div>Uploaded <span class='mono'>{sid}</span></div>")
+    except Exception as e:
+        return HTMLResponse(f"<div class='muted'>Error: {e}</div>", status_code=200)
+
+# helper: build token from stored payload WITHOUT writing DB (avoid duplicates)
+def _token_from_payload(session_id: str, exp_ts: int) -> str:
+    payload = {"sid": session_id, "exp": int(exp_ts)}
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    sig = hmac.new((SHARE_SECRET or "").encode(), raw, hashlib.sha256).digest()
+    def _b64u(b: bytes) -> str:
+        return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+    return _b64u(raw) + "." + _b64u(sig)
+
+@app.post("/ui/share/{session_id}", response_class=HTMLResponse)
+def ui_create_share(request: Request, session_id: str, ttl_s: int = Query(default=3600)):
+    _require_ui_auth(request)
+    exp = int(time.time()) + int(ttl_s)
+    token = sign_share_token(session_id, exp)  # recorded in DB
+    lst = storage_list_shares(session_id=session_id)
+    rows = [{"jti":it["jti"], "exp_ts":it["exp_ts"], "token": _token_from_payload(session_id, it["exp_ts"])} for it in lst]
+    return templates.TemplateResponse(request, "_shares_list.html", {"shares": rows})
+
+@app.get("/ui/shares", response_class=HTMLResponse)
+def ui_list_shares(request: Request, session_id: str):
+    _require_ui_auth(request)
+    lst = storage_list_shares(session_id=session_id)
+    rows = [{"jti":it["jti"], "exp_ts":it["exp_ts"], "token": _token_from_payload(session_id, it["exp_ts"])} for it in lst]
+    return templates.TemplateResponse(request, "_shares_list.html", {"shares": rows})
+
+@app.delete("/ui/share/{token}", response_class=HTMLResponse)
+def ui_revoke_share(request: Request, token: str):
+    _require_ui_auth(request)
+    jti = jti_from_token(token)
+    if not jti:
+        raise HTTPException(status_code=400, detail="malformed token")
+    storage_revoke_share(jti)
+    return HTMLResponse("")

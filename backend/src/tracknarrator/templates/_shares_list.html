@@ -1,0 +1,26 @@
+<table>
+  <thead>
+    <tr>
+      <th>JTI</th>
+      <th>Expire</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for it in shares %}
+    <tr>
+      <td class="mono">{{ it.jti }}</td>
+      <td class="muted">{{ it.exp_ts }}</td>
+      <td>
+        <a class="btn" href="/shared/{{ it.token }}/summary" target="_blank">Open</a>
+        <a class="btn" href="/docs/share.html?token={{ it.token }}" target="_blank">Viewer</a>
+        <button class="btn" hx-delete="/ui/share/{{ it.token }}" hx-target="closest tr"
+          hx-swap="outerHTML">Revoke</button>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not shares %}<tr>
+      <td colspan="3" class="muted">No active shares.</td>
+    </tr>{% endif %}
+  </tbody>
+</table>

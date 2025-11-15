@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>TrackNarrator — Admin Login</h1>
+<p class="muted">/ui 受保護。請輸入 UI Key（環境變數 TN_UI_KEY）。</p>
+<form method="post" action="/ui/login">
+  <div class="row">
+    <input type="password" name="key" placeholder="UI Key" required />
+    <button class="btn" type="submit">Login</button>
+  </div>
+</form>
+{% if error %}<p class="muted">登入失敗：{{ error }}</p>{% endif %}
+{% endblock %}

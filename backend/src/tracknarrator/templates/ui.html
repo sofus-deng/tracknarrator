@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 style="margin:0">TrackNarrator — Admin</h1>
+<p class="muted">Upload data, manage shares, open summaries. <a class="btn" href="/ui/logout">Logout</a></p>
+
+<div class="card">
+  <h2>Upload</h2>
+  <form id="up" hx-post="/ui/upload" hx-target="#upResult" hx-swap="innerHTML" enctype="multipart/form-data">
+    <input name="file" type="file" required />
+    <button class="btn" type="submit">Upload</button>
+  </form>
+  <div id="upResult" class="muted"></div>
+</div>
+
+<div class="card">
+  <h2>Sessions</h2>
+  <div hx-get="/ui/sessions" hx-trigger="load" hx-target="#sess" hx-swap="innerHTML"></div>
+  <div id="sess"></div>
+</div>
+{% endblock %}

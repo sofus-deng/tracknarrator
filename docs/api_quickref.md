@@ -145,3 +145,17 @@ curl "http://localhost:8000/shared/{token}/summary"
 
 - CORS: enable by setting `TN_CORS_ORIGINS="*"` for demo, or a comma-separated allowlist for production.
 - Web uploader: open `docs/upload.html`; set API Base to your backend; upload CSV/GPX/ZIP → share token & viewer link.
+### Admin UI env
+- Create a `.env` file (or export OS env) with:
+  - `TN_UI_KEY=<your-strong-key>` to enable `/ui` (htmx admin).
+- On startup the backend auto-loads `.env` (stdlib parser).
+### Admin UI (protected, htmx)
+- Set env `TN_UI_KEY="..."` to enable.
+- `GET /ui/login` → login form
+- `POST /ui/login` (form key) → set signed cookie, redirect /ui
+- `GET /ui` → admin shell
+- `GET /ui/sessions` → sessions table (fragment)
+- `POST /ui/upload` (multipart) → HTML result (fragment)
+- `POST /ui/share/{session_id}` → create share, returns shares table (fragment)
+- `GET /ui/shares?session_id=...` → list active shares (fragment)
+- `DELETE /ui/share/{token}` → revoke (fragment)

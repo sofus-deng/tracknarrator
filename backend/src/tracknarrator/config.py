@@ -2,9 +2,32 @@
 
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+# --- minimal .env loader (stdlib only) ---
+def _load_dotenv():
+    p = Path(".env")
+    if not p.exists():
+        return
+    try:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            s = line.strip()
+            if not s or s.startswith("#") or "=" not in s:
+                continue
+            k, v = s.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+            # keep existing OS env if already set
+            if k and (k not in os.environ):
+                os.environ[k] = v
+    except Exception:
+        # fail open: env loading is best-effort
+        pass
+
+_load_dotenv()
 
 
 # Share configuration defaults
@@ -43,3 +66,4 @@ DEFAULT_SECTION_LABELS = ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
 # Database path configuration
 TN_DB_PATH = os.getenv("TN_DB_PATH", "tracknarrator.db")
 TN_CORS_ORIGINS = os.getenv("TN_CORS_ORIGINS", "")  # e.g. "http://127.0.0.1:4100,https://<user>.github.io" or "*"
+TN_UI_KEY = os.getenv("TN_UI_KEY", "")  # when empty => /ui disabled (404)
