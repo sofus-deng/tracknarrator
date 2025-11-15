@@ -9,8 +9,9 @@ from typing import Dict, Any, Union
 from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Body
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
+from starlette.middleware.cors import CORSMiddleware
 
-from .config import get_settings, SHARE_TTL_S_DEFAULT
+from .config import get_settings, SHARE_TTL_S_DEFAULT, TN_CORS_ORIGINS
 from .share import sign_share_token, verify_share_token, jti_from_token
 from .storage import list_shares as storage_list_shares, revoke_share as storage_revoke_share, add_share
 from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
@@ -41,6 +42,17 @@ app = FastAPI(
     description="API for importing and managing racing data",
     version="0.0.1"
 )
+
+# CORS: opt-in via env
+origins = [o.strip() for o in (TN_CORS_ORIGINS or "").split(",") if o.strip()]
+if origins or TN_CORS_ORIGINS.strip() == "*":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"] if TN_CORS_ORIGINS.strip() == "*" else origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.get("/health")

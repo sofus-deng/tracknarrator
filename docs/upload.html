@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrackNarrator Uploader</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    .card {
+      background: #0f141b;
+      border: 1px solid #243040;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .25)
+    }
+
+    .drop {
+      border: 2px dashed #3a485a;
+      border-radius: 14px;
+      padding: 28px;
+      text-align: center
+    }
+
+    .muted {
+      color: #8ca0b3
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap
+    }
+
+    .btn {
+      padding: 10px 14px;
+      border: 1px solid #2a7bd8;
+      border-radius: 10px;
+      background: #133a63;
+      color: #e6f2ff;
+      cursor: pointer
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
+    }
+
+    .ok {
+      color: #9ad46a
+    }
+
+    .bad {
+      color: #ff9797
+    }
+
+    input[type=text] {
+      background: #0b1117;
+      border: 1px solid #243040;
+      border-radius: 8px;
+      padding: 8px;
+      color: #e6f2ff;
+      min-width: 360px
+    }
+  </style>
+</head>
+
+<body style="background:#0b1117;color:#e6f2ff;font-family:system-ui, 'Segoe UI', Inter, sans-serif;padding:24px">
+  <h1 style="margin:0 0 6px 0">TrackNarrator — Web Upload</h1>
+  <p class="muted">Upload your RaceChrono/TRD CSV, GPX, or ZIP → we'll generate a share token and give you a viewer
+    link.</p>
+
+  <div class="card" style="margin:14px 0">
+    <div class="row">
+      <label class="muted">API Base</label>
+      <input id="apiBase" type="text" placeholder="http://127.0.0.1:8000" />
+      <button class="btn" id="saveApi">Save</button>
+      <span class="muted mono" id="apiHint"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="drop" class="drop">
+      <p class="muted">Drag & drop file here, or</p>
+      <input id="file" type="file" />
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="go" class="btn">Upload & Create Share</button>
+      <span id="stat" class="muted"></span>
+    </div>
+    <div id="result" style="margin-top:14px;display:none">
+      <div>Session: <span class="mono" id="sid">-</span></div>
+      <div>Token: <span class="mono" id="tok">-</span></div>
+      <div class="row" style="margin-top:8px">
+        <a id="apiLink" class="btn" target="_blank">Open API summary</a>
+        <a id="viewerLink" class="btn" target="_blank">Open Viewer</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+  <script src="./upload.js"></script>
+</body>
+
+</html>

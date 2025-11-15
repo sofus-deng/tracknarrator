@@ -42,3 +42,4 @@ DEFAULT_SECTION_LABELS = ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
 
 # Database path configuration
 TN_DB_PATH = os.getenv("TN_DB_PATH", "tracknarrator.db")
+TN_CORS_ORIGINS = os.getenv("TN_CORS_ORIGINS", "")  # e.g. "http://127.0.0.1:4100,https://<user>.github.io" or "*"

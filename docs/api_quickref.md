@@ -138,3 +138,8 @@ curl "http://localhost:8000/shared/{token}/summary"
 - `cards.json` - Shareable social cards
 - `sparklines.json` - Telemetry sparklines
 - `kpis.json` - Key performance indicators
+
+## CORS Configuration
+
+- CORS: enable by setting `TN_CORS_ORIGINS="*"` for demo, or a comma-separated allowlist for production.
+- Web uploader: open `docs/upload.html`; set API Base to your backend; upload CSV/GPX/ZIP → share token & viewer link.
