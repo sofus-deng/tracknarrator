@@ -44,6 +44,17 @@ def init_db():
             jti TEXT PRIMARY KEY,
             revoked_at INTEGER NOT NULL
         )""")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS audits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                actor TEXT,
+                action TEXT,
+                target TEXT,
+                meta_json TEXT,
+                sig TEXT
+            )
+        """)
 
 def upsert_session(bundle: Dict[str, Any], *, name: Optional[str]=None) -> str:
     # First check if there's a session object with an id
@@ -118,3 +129,25 @@ def is_revoked(jti: str) -> bool:
     with _db() as db:
         cur = db.execute("SELECT 1 FROM revocations WHERE jti=? LIMIT 1", (jti,))
         return cur.fetchone() is not None
+
+def add_audit(rec: dict):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO audits (ts, actor, action, target, meta_json, sig) VALUES (?, ?, ?, ?, ?, ?)",
+                (rec.get("ts"), rec.get("actor"), rec.get("action"), rec.get("target"),
+                 json.dumps(rec.get("meta", {}), separators=(",", ":"), sort_keys=True),
+                 rec.get("sig")))
+    conn.commit()
+
+def list_audits(limit: int = 50):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT ts, actor, action, target, meta_json, sig FROM audits ORDER BY id DESC LIMIT ?", (limit,))
+    rows = []
+    for ts, actor, action, target, meta_json, sig in cur.fetchall():
+        rows.append({"ts": ts, "actor": actor, "action": action, "target": target,
+                     "meta": json.loads(meta_json or "{}"), "sig": sig})
+    return rows
+
+def get_conn():
+    return _connect()

@@ -4,7 +4,7 @@ import os, io
 from .test_helpers import create_test_client_with_env
 
 def test_ui_upload_and_share(monkeypatch):
-    client = create_test_client_with_env({"TN_UI_KEY": "demo-key"})
+    client = create_test_client_with_env({"TN_UI_KEY": "demo-key", "TN_UI_KEYS": ""})
     # login
     r = client.post("/ui/login", data={"key":"demo-key"}, follow_redirects=False)
     cookie = r.cookies.get("tn_ui")

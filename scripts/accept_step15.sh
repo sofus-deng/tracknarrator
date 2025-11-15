@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+set +H  # Disable history expansion
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # start backend
 (cd backend && make dev > /dev/null 2>&1 &) 

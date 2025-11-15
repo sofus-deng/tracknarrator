@@ -14,7 +14,8 @@ def create_test_client_with_env(env_vars):
         'tracknarrator.main',
         'tracknarrator.api',
         'tracknarrator.config',
-        'tracknarrator.ui_auth'
+        'tracknarrator.ui_auth',
+        'tracknarrator.audit'
     ]
     for module in modules_to_clear:
         if module in sys.modules:

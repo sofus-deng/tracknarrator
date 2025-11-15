@@ -67,3 +67,9 @@ DEFAULT_SECTION_LABELS = ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
 TN_DB_PATH = os.getenv("TN_DB_PATH", "tracknarrator.db")
 TN_CORS_ORIGINS = os.getenv("TN_CORS_ORIGINS", "")  # e.g. "http://127.0.0.1:4100,https://<user>.github.io" or "*"
 TN_UI_KEY = os.getenv("TN_UI_KEY", "")  # when empty => /ui disabled (404)
+# UI cookie TTL and 'Secure' flag (set to "1" under HTTPS/proxy)
+TN_UI_TTL_S = int(os.getenv("TN_UI_TTL_S", "3600"))
+TN_COOKIE_SECURE = os.getenv("TN_COOKIE_SECURE", "0") == "1"
+# Step 18: optional Admin API-key allowlist (comma-separated, empty means off)
+TN_UI_KEYS = [x.strip() for x in os.getenv("TN_UI_KEYS", "").split(",") if x.strip()]
+# Step 18: audit signing secret (fallback to share secret if available)

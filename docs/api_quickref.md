@@ -159,3 +159,9 @@ curl "http://localhost:8000/shared/{token}/summary"
 - `POST /ui/share/{session_id}` → create share, returns shares table (fragment)
 - `GET /ui/shares?session_id=...` → list active shares (fragment)
 - `DELETE /ui/share/{token}` → revoke (fragment)
+
+### Admin security (Step 18)
+- Allowlist: set `TN_UI_KEYS="key1,key2"` - /ui endpoints require a matching allowlist key (cookie `tn_uik` or header `X-API-Key`). If empty, allowlist is disabled.
+- Audit: signed records stored in SQLite table `audits`; developer endpoint `GET /dev/audits` returns recent entries.
+- Rate limiting: simple token bucket per remote address (burst 20, ~5 rps). Excess returns HTTP 429.
+- Cookies: `TN_UI_TTL_S` controls login TTL seconds. Set `TN_COOKIE_SECURE=1` under HTTPS.

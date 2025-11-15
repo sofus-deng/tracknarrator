@@ -16,18 +16,56 @@
 
     <section class="controls">
       <button id="loadBtn">Load summary.json</button>
+      <button id="shareBtn">Create Share Link</button>
       <span id="status" class="muted"></span>
+    </section>
+    <section id="shareResult" class="hidden">
+      <h3>Share Link</h3>
+      <p>Copy this link to share the session:</p>
+      <input id="shareUrl" readonly
+        style="width:100%;padding:8px;border-radius:5px;border:1px solid #243040;background:#151a21;color:#e6edf3;" />
+      <button id="copyBtn">Copy</button>
     </section>
 
     <section id="kpis" class="kpis hidden"></section>
+    <section class="controls">
+      <label class="muted">Lang:</label>
+      <select id="langSel">
+        <option value="zh-Hant">zh-Hant</option>
+        <option value="en">en</option>
+      </select>
+      <button id="vizBtn">Load Lap Deltas</button>
+    </section>
+    <section>
+      <h2>Lap Delta</h2>
+      <canvas id="lapChart" width="1000" height="240"
+        style="max-width:100%;border:1px solid #243040;border-radius:10px;background:#0f141b"></canvas>
+    </section>
     <section>
       <h2>Top Events & Share Cards</h2>
       <div id="cards" class="grid"></div>
+    </section>
+    <section>
+      <h2>Coach Score</h2>
+      <button id="coachBtn">Load Coach Score</button>
+      <canvas id="coachGauge" width="300" height="160"
+        style="max-width:100%;border:1px solid #243040;border-radius:10px;background:#0f141b"></canvas>
+      <div class="muted" id="coachMeta"></div>
     </section>
 
     <section>
       <h2>Laps</h2>
       <div id="laps" class="scroll"></div>
+    </section>
+    <section class="muted" style="margin-top:12px">
+      <details>
+        <summary>Data source</summary>
+        <ul>
+          <li>Default demo: reads <code>docs/data/summary.json</code></li>
+          <li>Shared token: add <code>?token=<TOKEN></code></li>
+          <li>Live API: add <code>?sid=<SESSION_ID></code></li>
+        </ul>
+      </details>
     </section>
   </main>
   <script src="app.js"></script>

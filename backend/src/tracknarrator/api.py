@@ -6,7 +6,7 @@ import time
 import zipfile
 from typing import Dict, Any, Union
 
-from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Body, Form
+from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Body, Form, Header
 from fastapi.responses import JSONResponse, Response, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -18,8 +18,10 @@ import requests
 from .config import get_settings, SHARE_TTL_S_DEFAULT, TN_CORS_ORIGINS
 from .share import sign_share_token, verify_share_token, jti_from_token, SHARE_SECRET
 from .storage import list_shares as storage_list_shares, revoke_share as storage_revoke_share, add_share, list_sessions as storage_list_sessions
-from .ui_auth import sign_cookie, verify_cookie
-from .config import TN_UI_KEY
+from .ui_auth import sign_cookie, verify_cookie, set_ui_cookie
+from .config import TN_UI_KEY, TN_UI_TTL_S, TN_UI_KEYS
+from .audit import make_audit, rate_check, is_allowlisted
+from .storage import add_audit, list_audits
 from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
 from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
@@ -73,6 +75,14 @@ def _require_ui_auth(request: Request):
     ok, _ = verify_cookie(cookie or "")
     if not ok:
         raise HTTPException(status_code=401, detail="auth required")
+    # allowlist check (if configured): header or cookie 'tn_uik'
+    api_key = request.headers.get("X-API-Key") or request.cookies.get("tn_uik") or ""
+    if not is_allowlisted(api_key):
+        raise HTTPException(status_code=401, detail="allowlist required")
+    # basic rate-limit per remote addr
+    rk = f"ui:{request.client.host}"
+    if not rate_check(rk, rate_per_s=5.0, burst=20.0):
+        raise HTTPException(status_code=429, detail="rate limit")
 
 
 @app.get("/health")
@@ -1354,9 +1364,23 @@ def ui_login(request: Request, key: str = Form(...)):
     _require_ui_enabled()
     if key != TN_UI_KEY:
         return templates.TemplateResponse(request, "login.html", {"error": "invalid key"})
-    c = sign_cookie()
+    # optional second factor: UI allowlist key via form field 'uik'
+    form = request._form if hasattr(request, "_form") else None
+    uik = None
+    try:
+        if not form:
+            form = {}
+        uik = request._form.get("uik") if hasattr(request, "_form") else None
+    except Exception:
+        uik = None
     resp = RedirectResponse(url="/ui", status_code=302)
-    resp.set_cookie("tn_ui", c, httponly=True, samesite="lax", max_age=3600)
+    c = sign_cookie()
+    set_ui_cookie(resp, c)
+    # if user provided an allowlist key and valid, set as cookie; otherwise if system has allowlist but none provided, can still be provided via Header later
+    if uik and uik in TN_UI_KEYS:
+        resp.set_cookie("tn_uik", uik, httponly=True, samesite="lax", max_age=int(TN_UI_TTL_S))
+    # audit
+    add_audit(make_audit("ui", "login", "admin", {"ok": True}))
     return resp
 
 @app.get("/ui/logout")
@@ -1394,8 +1418,10 @@ def ui_upload(request: Request, file: UploadFile = File(...)):
             return HTMLResponse(f"<div class='muted'>Upload failed: {r.status_code}</div>", status_code=200)
         data = r.json()
         sid = data.get("session_id") or "unknown"
+        add_audit(make_audit("ui", "upload", sid, {"ok": True, "name": file.filename}))
         return HTMLResponse(f"<div>Uploaded <span class='mono'>{sid}</span></div>")
     except Exception as e:
+        add_audit(make_audit("ui", "upload", "error", {"err": str(e)}))
         return HTMLResponse(f"<div class='muted'>Error: {e}</div>", status_code=200)
 
 # helper: build token from stored payload WITHOUT writing DB (avoid duplicates)
@@ -1414,6 +1440,7 @@ def ui_create_share(request: Request, session_id: str, ttl_s: int = Query(defaul
     token = sign_share_token(session_id, exp)  # recorded in DB
     lst = storage_list_shares(session_id=session_id)
     rows = [{"jti":it["jti"], "exp_ts":it["exp_ts"], "token": _token_from_payload(session_id, it["exp_ts"])} for it in lst]
+    add_audit(make_audit("ui", "share_create", session_id, {"count": len(rows)}))
     return templates.TemplateResponse(request, "_shares_list.html", {"shares": rows})
 
 @app.get("/ui/shares", response_class=HTMLResponse)
@@ -1430,4 +1457,10 @@ def ui_revoke_share(request: Request, token: str):
     if not jti:
         raise HTTPException(status_code=400, detail="malformed token")
     storage_revoke_share(jti)
+    add_audit(make_audit("ui", "share_revoke", jti, {}))
     return HTMLResponse("")
+
+@app.get("/dev/audits")
+def dev_audits(limit: int = 50):
+    # developer endpoint for tests
+    return list_audits(limit=limit)

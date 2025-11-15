@@ -5,11 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v0.10.0
+## v0.11.0
 - feat(ui): htmx-powered Admin (/ui) with signed-cookie login (TN_UI_KEY), upload proxy, shares mgmt
 - tests: ui auth + upload/share tests
 - scripts: accept_step17.sh; CI wired
 - chore: bump 0.10.0
+- chore(ci): unify path for accept_step17.sh under scripts/
+- feat(ui): cookie TTL via TN_UI_TTL_S, optional Secure via TN_COOKIE_SECURE
+- feat(security): Step 18 - Admin allowlist (TN_UI_KEYS), signed audit log (SQLite), rate limiting
+- tests: ui allowlist/rate/audit and cookie ttl; acceptance accept_step18.sh; CI wired
 
 ## v0.8.0
 - feat: docs/upload.html + upload.js (web uploader with one-click share)
