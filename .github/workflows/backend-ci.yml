@@ -65,6 +65,10 @@ jobs:
         working-directory: backend
         run: |
           ../scripts/accept_step12.sh
+      - name: Acceptance (step 13)
+        working-directory: backend
+        run: |
+          ../scripts/accept_step13.sh
       - name: Upload demo artifacts
         if: always()
         uses: actions/upload-artifact@v4

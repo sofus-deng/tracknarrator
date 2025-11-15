@@ -4,7 +4,7 @@ import hashlib
 import json
 import time
 from typing import Tuple, Optional
-
+from .storage import add_share, is_revoked
 from .config import SHARE_SECRET
 
 
@@ -29,7 +29,14 @@ def sign_share_token(session_id: str, exp_ts: int, secret: Optional[str] = None)
     payload = {"sid": session_id, "exp": int(exp_ts)}
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     sig = hmac.new(secret, raw, hashlib.sha256).digest()
-    return _b64url(raw) + "." + _b64url(sig)
+    token = _b64url(raw) + "." + _b64url(sig)
+    # jti = sha256(raw|sig) for stable id, used for listing/revocation
+    jti = hashlib.sha256(raw + sig).hexdigest()
+    try:
+        add_share(jti, session_id, int(exp_ts))
+    except Exception:
+        pass
+    return token
 
 
 def verify_share_token(token: str, now_ts: Optional[int] = None, secret: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str]]:
@@ -57,6 +64,10 @@ def verify_share_token(token: str, now_ts: Optional[int] = None, secret: Optiona
         
         if not hmac.compare_digest(good_sig, base64.urlsafe_b64decode(enc_sig + "==")):
             return False, None, "bad_signature"
+        
+        jti = hashlib.sha256(raw + good_sig).hexdigest()
+        if is_revoked(jti):
+            return False, None, "revoked"
             
         if now > exp:
             return False, None, "expired"
@@ -67,3 +78,13 @@ def verify_share_token(token: str, now_ts: Optional[int] = None, secret: Optiona
         return True, sid, None
     except Exception:
         return False, None, "malformed"
+
+def jti_from_token(token: str, secret: Optional[str] = None) -> Optional[str]:
+    try:
+        enc_payload, enc_sig = token.split(".", 1)
+        raw = base64.urlsafe_b64decode(enc_payload + "==")
+        sec = (secret or SHARE_SECRET).encode()
+        good_sig = hmac.new(sec, raw, hashlib.sha256).digest()
+        return hashlib.sha256(raw + good_sig).hexdigest()
+    except Exception:
+        return None

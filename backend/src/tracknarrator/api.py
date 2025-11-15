@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from .config import get_settings, SHARE_TTL_S_DEFAULT
-from .share import sign_share_token, verify_share_token
+from .share import sign_share_token, verify_share_token, jti_from_token
+from .storage import list_shares as storage_list_shares, revoke_share as storage_revoke_share, add_share
 from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
 from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
@@ -946,7 +947,8 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
 @app.post("/share/{session_id}")
 async def create_share_token(
     session_id: str,
-    ttl_s: int = Query(default=SHARE_TTL_S_DEFAULT, description="Time to live in seconds")
+    ttl_s: int = Query(default=SHARE_TTL_S_DEFAULT, description="Time to live in seconds"),
+    label: str | None = None
 ) -> Dict[str, Any]:
     """
     Create a shareable token for a session.
@@ -954,9 +956,10 @@ async def create_share_token(
     Args:
         session_id: Session ID to create share token for
         ttl_s: Time to live in seconds (default from config)
+        label: Optional label for the share
         
     Returns:
-        Dictionary with token, expiration timestamp, and share URL
+        Dictionary with token, expiration timestamp, share URL, and label
     """
     # Verify session exists
     bundle = store.get_bundle(session_id)
@@ -967,11 +970,20 @@ async def create_share_token(
     exp_ts = int(time.time()) + ttl_s
     token = sign_share_token(session_id, exp_ts)
     
+    # sign_share_token already added a share record; if label present, update it:
+    jti = jti_from_token(token)
+    if jti:
+        try:
+            add_share(jti, session_id, exp_ts, label=label)
+        except Exception:
+            pass
+    
     # Return token and metadata
     return {
         "token": token,
         "expire_at": exp_ts,
-        "url": f"/shared/{token}/summary"
+        "url": f"/shared/{token}/summary",
+        "label": label
     }
 
 
@@ -1070,6 +1082,20 @@ async def get_shared_summary(
         }
     
     return response
+
+@app.get("/shares")
+async def list_shares(session_id: str | None = None):
+    """List active shares (not revoked and not expired)."""
+    return storage_list_shares(session_id=session_id)
+
+@app.delete("/share/{token}", status_code=204)
+async def revoke_share(token: str):
+    """Revoke a share token."""
+    jti = jti_from_token(token)
+    if not jti:
+        raise HTTPException(status_code=400, detail="malformed token")
+    storage_revoke_share(jti)
+    return Response(status_code=204)
 
 
 @app.get("/sessions")

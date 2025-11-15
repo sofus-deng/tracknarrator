@@ -74,6 +74,33 @@ curl "http://localhost:8000/sessions?limit=10" | jq .
 curl -X DELETE "http://localhost:8000/session/barber-demo-r1"
 ```
 
+## Share Management
+
+### Create Share Token
+```bash
+curl -X POST "http://localhost:8000/share/barber-demo-r1?ttl_s=3600&label=my-share"
+```
+
+### List Shares
+```bash
+curl "http://localhost:8000/shares?session_id=barber-demo-r1"
+```
+
+### List All Shares
+```bash
+curl "http://localhost:8000/shares"
+```
+
+### Revoke Share
+```bash
+curl -X DELETE "http://localhost:8000/share/{token}"
+```
+
+### Access Shared Summary
+```bash
+curl "http://localhost:8000/shared/{token}/summary"
+```
+
 ## Response Examples
 
 ### Narrative Response

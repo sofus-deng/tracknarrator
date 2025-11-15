@@ -31,6 +31,19 @@ def init_db():
             name TEXT,
             bundle_json TEXT NOT NULL
         )""")
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS shares(
+            jti TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            label TEXT,
+            exp_ts INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )""")
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS revocations(
+            jti TEXT PRIMARY KEY,
+            revoked_at INTEGER NOT NULL
+        )""")
 
 def upsert_session(bundle: Dict[str, Any], *, name: Optional[str]=None) -> str:
     sid = bundle.get("session_id") or bundle.get("id") or f"s_{int(time.time()*1000)}"
@@ -67,3 +80,37 @@ def delete_session(session_id: str) -> bool:
     with _db() as db:
         cur = db.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
         return cur.rowcount > 0
+
+def add_share(jti: str, session_id: str, exp_ts: int, *, label: str|None=None) -> None:
+    now = int(time.time())
+    with _db() as db:
+        db.execute("INSERT OR REPLACE INTO shares(jti, session_id, label, exp_ts, created_at) VALUES(?,?,?,?,?)",
+                   (jti, session_id, label, exp_ts, now))
+
+def list_shares(session_id: str|None=None) -> List[Dict[str, Any]]:
+    now = int(time.time())
+    q = """
+        SELECT s.jti, s.session_id, s.label, s.exp_ts, s.created_at
+        FROM shares s
+        LEFT JOIN revocations r ON s.jti = r.jti
+        WHERE r.jti IS NULL AND s.exp_ts > ?
+    """
+    args = [now]
+    if session_id:
+        q += " AND s.session_id=?"; args.append(session_id)
+    q += " ORDER BY s.created_at DESC"
+    with _db() as db:
+        cur = db.execute(q, tuple(args))
+        return [dict(r) for r in cur.fetchall()]
+
+def revoke_share(jti: str) -> bool:
+    now = int(time.time())
+    with _db() as db:
+        db.execute("INSERT OR REPLACE INTO revocations(jti, revoked_at) VALUES(?,?)", (jti, now))
+        db.execute("DELETE FROM shares WHERE jti=?", (jti,))
+        return True
+
+def is_revoked(jti: str) -> bool:
+    with _db() as db:
+        cur = db.execute("SELECT 1 FROM revocations WHERE jti=? LIMIT 1", (jti,))
+        return cur.fetchone() is not None
