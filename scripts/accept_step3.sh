@@ -9,21 +9,48 @@ cd "$ROOT"
 
 LOG="/tmp/dev_step3.log"
 
-# Start dev server in current shell; capture PID via $!
-make dev > "$LOG" 2>&1 & 
-DEV_PID=$!
+start_server() {
+  # Prefer Makefile in backend/
+  if [ -f "backend/Makefile" ] && grep -qE '^[[:space:]]*dev:' backend/Makefile; then
+    echo "[server] make -C backend dev"
+    make -C backend dev > "$LOG" 2>&1 & 
+    echo $! > /tmp/tn_dev_pid
+    return 0
+  fi
+  # Else uv + uvicorn
+  if command -v uv >/dev/null 2>&1; then
+    echo "[server] uv run (uvicorn) in backend/"
+    ( cd backend && uv run uvicorn tracknarrator.main:app --host 127.0.0.1 --port 8000 ) > "$LOG" 2>&1 &
+    echo $! > /tmp/tn_dev_pid
+    return 0
+  fi
+  # Else python -m uvicorn (assuming uvicorn installed via deps)
+  if command -v python >/dev/null 2>&1; then
+    echo "[server] python -m uvicorn in backend/"
+    ( cd backend && python -m uvicorn tracknarrator.main:app --host 127.0.0.1 --port 8000 ) > "$LOG" 2>&1 &
+    echo $! > /tmp/tn_dev_pid
+    return 0
+  fi
+  echo "[server] No launcher found (make/uv/python)"
+  return 1
+}
+
+start_server
+DEV_PID="$(cat /tmp/tn_dev_pid 2>/dev/null || echo "")"
 
 cleanup() {
   echo "--- tail of server log (accept_step3) ---"
   tail -n 200 "$LOG" || true
-  kill "$DEV_PID" >/dev/null 2>&1 || true
-  wait "$DEV_PID" 2>/dev/null || true
+  if [ -n "${DEV_PID}" ] && ps -p "${DEV_PID}" >/dev/null 2>&1; then
+    kill "${DEV_PID}" >/dev/null 2>&1 || true
+    wait "${DEV_PID}" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
 # Wait for readiness
 READY=0
-for i in {1..120}; do
+for i in {1..180}; do
   if curl -sf http://127.0.0.1:8000/docs >/dev/null 2>&1; then READY=1; break; fi
   sleep 0.5
 done
