@@ -10,7 +10,6 @@ cd "$ROOT"
 LOG="/tmp/dev_step3.log"
 
 start_server() {
-  # Always prefer uv + uvicorn, independent of Makefile
   if command -v uv >/dev/null 2>&1; then
     echo "[server] uv run uvicorn (backend/)"
     ( cd backend && TN_UI_KEY="${TN_UI_KEY:-ci-demo}" TN_UI_KEYS="${TN_UI_KEYS:-ci-demo}" \
@@ -44,7 +43,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Wait for readiness
+# Wait for readiness (up to 90s)
 READY=0
 for i in {1..180}; do
   if curl -sf http://127.0.0.1:8000/docs >/dev/null 2>&1; then READY=1; break; fi
@@ -55,31 +54,8 @@ if [ "$READY" -ne 1 ]; then
   exit 20
 fi
 
-# Seed fixture
-BUNDLE="backend/tests/fixtures/bundle_sample_barber.json"
-if [ ! -f "$BUNDLE" ]; then
-  echo "Missing fixture: $BUNDLE"
-  exit 21
-fi
-curl -fsS --retry 5 --retry-all-errors -X POST \
-  -H 'Content-Type: application/json' --data-binary @"$BUNDLE" \
-  http://127.0.0.1:8000/dev/seed >/dev/null
-
-# Obtain session id
-SID="$(curl -fsS --retry 5 --retry-all-errors http://127.0.0.1:8000/sessions | python - <<'PY'
-import sys,json
-arr=json.loads(sys.stdin.read())
-print(arr[0]["session_id"] if arr else "")
-PY
-)"
-if [ -z "$SID" ]; then
-  echo "Failed to obtain session_id"
-  exit 22
-fi
-echo "Using session ID: $SID"
-
 # Weather samples
-FIX="backend/tests/fixtures"
+FIX="samples"
 OK="$FIX/weather_ok.csv"
 UTC="$FIX/weather_utc.csv"
 SEM="$FIX/weather_semicolon.csv"
@@ -95,7 +71,7 @@ inspect_weather() {
   local label="$2"
   RESP="$(curl -fsS --retry 5 --retry-all-errors -X POST \
     -F "file=@${file}" \
-    "http://127.0.0.1:8000/dev/inspect/weather?session_id=${SID}" || true)"
+    "http://127.0.0.1:8000/dev/inspect/weather" || true)"
   if [ -z "$RESP" ]; then
     echo "[${label}] empty response from /dev/inspect/weather"
     exit 26

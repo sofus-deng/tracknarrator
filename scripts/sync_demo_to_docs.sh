@@ -55,27 +55,39 @@ if [ "$READY" -ne 1 ]; then
   exit 1
 fi
 
-# Seed sample bundle
-BUNDLE="backend/tests/fixtures/bundle_sample_barber.json"
-curl -fsS --retry 5 --retry-all-errors -X POST \
-  -H 'Content-Type: application/json' --data-binary @"$BUNDLE" \
-  http://127.0.0.1:8000/dev/seed >/dev/null
+BUNDLE="fixtures/bundle_sample_barber.json"
+if [ -f "$BUNDLE" ]; then
+  # Seed & export from live API
+  curl -fsS --retry 5 --retry-all-errors -X POST \
+    -H 'Content-Type: application/json' --data-binary @"$BUNDLE" \
+    http://127.0.0.1:8000/dev/seed >/dev/null
 
-# Pick session id
-SID="$(curl -fsS --retry 5 --retry-all-errors http://127.0.0.1:8000/sessions | python - <<'PY'
+  SID="$(curl -fsS --retry 5 --retry-all-errors http://127.0.0.1:8000/sessions | python - <<'PY'
 import sys,json
 arr=json.loads(sys.stdin.read())
 print(arr[0]["session_id"] if arr else "")
 PY
 )"
-test -n "$SID"
+  if [ -n "$SID" ]; then
+    curl -fsS --retry 5 --retry-all-errors \
+      "http://127.0.0.1:8000/session/${SID}/summary" -o docs/data/summary.json
+    curl -fsS --retry 3 --retry-all-errors \
+      "http://127.0.0.1:8000/session/${SID}/viz" -o docs/data/viz.json || true
+    curl -fsS --retry 3 --retry-all-errors \
+      "http://127.0.0.1:8000/session/${SID}/coach" -o docs/data/coach_score.json || true
+    echo "[sync_demo_to_docs] OK (live API)"
+    exit 0
+  fi
+fi
 
-# Generate docs/data artifacts
-curl -fsS --retry 5 --retry-all-errors \
-  "http://127.0.0.1:8000/session/${SID}/summary" -o docs/data/summary.json
-curl -fsS --retry 3 --retry-all-errors \
-  "http://127.0.0.1:8000/session/${SID}/viz" -o docs/data/viz.json || true
-curl -fsS --retry 3 --retry-all-errors \
-  "http://127.0.0.1:8000/session/${SID}/coach" -o docs/data/coach_score.json || true
-
-echo "[sync_demo_to_docs] OK"
+# Fallback: write a minimal placeholder for viewer (no server data needed)
+cat > docs/data/summary.json <<'JSON'
+{
+  "kpis": {"total_laps": 0, "best_lap_ms": null, "median_lap_ms": null, "session_duration_ms": null},
+  "events": [],
+  "cards": [],
+  "sparklines": {"laps_ms": [], "sections_ms": [], "speed_series": []},
+  "narrative": {"lines": ["TrackNarrator demo placeholder"], "lang": "en"}
+}
+JSON
+echo "[sync_demo_to_docs] OK (placeholder)"
