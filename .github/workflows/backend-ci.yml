@@ -83,6 +83,7 @@ jobs:
           ../scripts/accept_step16.sh
           ./scripts/accept_step17.sh
           ./scripts/accept_step18.sh
+          ./scripts/accept_step19.sh
       - name: Upload demo artifacts
         if: always()
         uses: actions/upload-artifact@v4

@@ -4,6 +4,7 @@ import io
 import json
 import time
 import zipfile
+from zipfile import ZIP_DEFLATED
 from typing import Dict, Any, Union
 
 from fastapi import FastAPI, UploadFile, HTTPException, Query, File, Request, Body, Form, Header
@@ -15,13 +16,14 @@ from pathlib import Path
 import base64, json, hmac, hashlib, time
 import requests
 
-from .config import get_settings, SHARE_TTL_S_DEFAULT, TN_CORS_ORIGINS
+from .config import get_settings, SHARE_TTL_S_DEFAULT, TN_CORS_ORIGINS, TN_EXPORT_SIGNING
 from .share import sign_share_token, verify_share_token, jti_from_token, SHARE_SECRET
 from .storage import list_shares as storage_list_shares, revoke_share as storage_revoke_share, add_share, list_sessions as storage_list_sessions
 from .ui_auth import sign_cookie, verify_cookie, set_ui_cookie
 from .config import TN_UI_KEY, TN_UI_TTL_S, TN_UI_KEYS
 from .audit import make_audit, rate_check, is_allowlisted
 from .storage import add_audit, list_audits
+from .csrf import make_csrf, verify_csrf
 from .importers.mylaps_sections_csv import MYLAPSSectionsCSVImporter
 from .importers.trd_long_csv import TRDLongCSVImporter
 from .importers.weather_csv import WeatherCSVImporter
@@ -674,10 +676,7 @@ async def get_session_summary(
 
 
 @app.get("/session/{session_id}/export")
-async def get_session_export(
-    session_id: str,
-    lang: str = Query("zh-Hant", description="Language for coaching tips and narrative")
-) -> Response:
+async def export_session(session_id: str, lang: str = Query(default="zh-Hant")):
     """
     Get session export pack as ZIP file.
     
@@ -751,41 +750,49 @@ async def get_session_export(
     }
     
     # Create ZIP file in memory
-    zip_buffer = io.BytesIO()
+    buf = io.BytesIO()
     
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+    with zipfile.ZipFile(buf, "w", ZIP_DEFLATED) as z:
         # Add summary.json
-        zip_file.writestr("summary.json", json.dumps(summary_data, ensure_ascii=False, indent=2))
+        z.writestr("summary.json", json.dumps(summary_data, ensure_ascii=False, indent=2))
         
         # Add coach_tips.json
-        zip_file.writestr("coach_tips.json", json.dumps(coach_tips_data, ensure_ascii=False, indent=2))
+        z.writestr("coach_tips.json", json.dumps(coach_tips_data, ensure_ascii=False, indent=2))
         
         # Add events.json
-        zip_file.writestr("events.json", json.dumps(events, ensure_ascii=False, indent=2))
+        z.writestr("events.json", json.dumps(events, ensure_ascii=False, indent=2))
         
         # Add cards.json
-        zip_file.writestr("cards.json", json.dumps(cards, ensure_ascii=False, indent=2))
+        z.writestr("cards.json", json.dumps(cards, ensure_ascii=False, indent=2))
         
         # Add sparklines.json
-        zip_file.writestr("sparklines.json", json.dumps(sparklines, ensure_ascii=False, indent=2))
+        z.writestr("sparklines.json", json.dumps(sparklines, ensure_ascii=False, indent=2))
         
         # Add narrative.json
-        zip_file.writestr("narrative.json", json.dumps(narrative_data, ensure_ascii=False, indent=2))
+        z.writestr("narrative.json", json.dumps(narrative_data, ensure_ascii=False, indent=2))
         
         # Add kpis.json
-        zip_file.writestr("kpis.json", json.dumps(kpis, ensure_ascii=False, indent=2))
+        z.writestr("kpis.json", json.dumps(kpis, ensure_ascii=False, indent=2))
         
         # Add coach_score.json
         coach_score = compute_coach_score(sparklines, events, lang=lang)
-        zip_file.writestr("coach_score.json", json.dumps(coach_score, ensure_ascii=False, separators=(",",":")))
+        z.writestr("coach_score.json", json.dumps(coach_score, ensure_ascii=False, separators=(",",":")))
+        
+        # Step 19: manifest + signature
+        if TN_EXPORT_SIGNING:
+            names = z.namelist()
+            manifest = {"created_at": int(time.time()), "files": []}
+            for name in names:
+                data = z.read(name)
+                sha = hashlib.sha256(data).hexdigest()
+                manifest["files"].append({"name": name, "sha256": sha, "bytes": len(data)})
+            mbytes = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode()
+            z.writestr("MANIFEST.json", mbytes)
+            sig = hmac.new((SHARE_SECRET or "tn-export").encode(), mbytes, hashlib.sha256).hexdigest()
+            z.writestr("SIGNATURE.txt", sig.encode())
     
-    zip_buffer.seek(0)
-    
-    return Response(
-        content=zip_buffer.getvalue(),
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={session_id}_export.zip"}
-    )
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="application/zip", headers={"Content-Disposition": f"attachment; filename={session_id}_export.zip"})
 
 
 @app.post("/dev/inspect/trd-long")
@@ -1355,15 +1362,20 @@ async def upload_file(
 
 # ---------- UI login/logout ----------
 @app.get("/ui/login", response_class=HTMLResponse)
-def ui_login_form(request: Request):
+def ui_login_page(request: Request):
     _require_ui_enabled()
-    return templates.TemplateResponse(request, "login.html", {"error": None})
+    # pre-render a CSRF token seeded with any existing cookie
+    c = request.cookies.get("tn_ui")
+    return templates.TemplateResponse("login.html", {"request": request, "csrf": make_csrf(c)})
 
 @app.post("/ui/login")
-def ui_login(request: Request, key: str = Form(...)):
+def ui_login(request: Request, key: str = Form(...), csrf: str = Form(...)):
     _require_ui_enabled()
+    # CSRF check uses any existing tn_ui cookie as binder (may be None on first login)
+    if not verify_csrf(csrf, request.cookies.get("tn_ui")):
+        return templates.TemplateResponse("login.html", {"request": request, "error": "csrf invalid", "csrf": make_csrf(request.cookies.get("tn_ui"))})
     if key != TN_UI_KEY:
-        return templates.TemplateResponse(request, "login.html", {"error": "invalid key"})
+        return templates.TemplateResponse("login.html", {"request": request, "error": "invalid key", "csrf": make_csrf(request.cookies.get("tn_ui"))})
     # optional second factor: UI allowlist key via form field 'uik'
     form = request._form if hasattr(request, "_form") else None
     uik = None
@@ -1391,24 +1403,23 @@ def ui_logout():
 
 # ---------- UI pages ----------
 @app.get("/ui", response_class=HTMLResponse)
-def ui_index(request: Request):
-    _require_ui_enabled()
-    # redirect to login if not authenticated
-    cookie = request.cookies.get("tn_ui") or ""
-    ok, _ = verify_cookie(cookie)
-    if not ok:
-        return RedirectResponse(url="/ui/login", status_code=302)
-    return templates.TemplateResponse(request, "ui.html", {})
+def ui_home(request: Request):
+    _require_ui_auth(request)
+    c = request.cookies.get("tn_ui")
+    return templates.TemplateResponse("ui.html", {"request": request, "csrf": make_csrf(c)})
 
 @app.get("/ui/sessions", response_class=HTMLResponse)
 def ui_sessions(request: Request):
     _require_ui_auth(request)
     items = storage_list_sessions()
-    return templates.TemplateResponse(request, "_sessions_table.html", {"sessions": items})
+    c = request.cookies.get("tn_ui")
+    return templates.TemplateResponse(request, "_sessions_table.html", {"sessions": items, "csrf": make_csrf(c)})
 
 @app.post("/ui/upload", response_class=HTMLResponse)
-def ui_upload(request: Request, file: UploadFile = File(...)):
+def ui_upload(request: Request, csrf: str = Form(...), file: UploadFile = File(...)):
     _require_ui_auth(request)
+    if not verify_csrf(csrf, request.cookies.get("tn_ui")):
+        return HTMLResponse("<div class='muted'>CSRF invalid</div>", status_code=200)
     # Forward to existing /upload endpoint via in-process request using stdlib 'requests' (already used elsewhere)
     try:
         import requests
@@ -1434,25 +1445,31 @@ def _token_from_payload(session_id: str, exp_ts: int) -> str:
     return _b64u(raw) + "." + _b64u(sig)
 
 @app.post("/ui/share/{session_id}", response_class=HTMLResponse)
-def ui_create_share(request: Request, session_id: str, ttl_s: int = Query(default=3600)):
+def ui_create_share(request: Request, session_id: str, ttl_s: int = Query(default=3600), csrf: str = Query(default="")):
     _require_ui_auth(request)
+    if not verify_csrf(csrf, request.cookies.get("tn_ui")):
+        raise HTTPException(status_code=400, detail="csrf invalid")
     exp = int(time.time()) + int(ttl_s)
     token = sign_share_token(session_id, exp)  # recorded in DB
     lst = storage_list_shares(session_id=session_id)
     rows = [{"jti":it["jti"], "exp_ts":it["exp_ts"], "token": _token_from_payload(session_id, it["exp_ts"])} for it in lst]
     add_audit(make_audit("ui", "share_create", session_id, {"count": len(rows)}))
-    return templates.TemplateResponse(request, "_shares_list.html", {"shares": rows})
+    c = request.cookies.get("tn_ui")
+    return templates.TemplateResponse(request, "_shares_list.html", {"shares": rows, "csrf": make_csrf(c)})
 
 @app.get("/ui/shares", response_class=HTMLResponse)
 def ui_list_shares(request: Request, session_id: str):
     _require_ui_auth(request)
     lst = storage_list_shares(session_id=session_id)
     rows = [{"jti":it["jti"], "exp_ts":it["exp_ts"], "token": _token_from_payload(session_id, it["exp_ts"])} for it in lst]
-    return templates.TemplateResponse(request, "_shares_list.html", {"shares": rows})
+    c = request.cookies.get("tn_ui")
+    return templates.TemplateResponse(request, "_shares_list.html", {"shares": rows, "csrf": make_csrf(c)})
 
 @app.delete("/ui/share/{token}", response_class=HTMLResponse)
-def ui_revoke_share(request: Request, token: str):
+def ui_revoke_share(request: Request, token: str, csrf: str = Query(default="")):
     _require_ui_auth(request)
+    if not verify_csrf(csrf, request.cookies.get("tn_ui")):
+        raise HTTPException(status_code=400, detail="csrf invalid")
     jti = jti_from_token(token)
     if not jti:
         raise HTTPException(status_code=400, detail="malformed token")

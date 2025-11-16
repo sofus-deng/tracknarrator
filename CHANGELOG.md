@@ -65,3 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Initial API structure
+## v0.12.0
+- feat(security): CSRF protection for Admin UI (htmx forms) with 5-minute time-bucket tokens
+- feat(export): MANIFEST.json with per-file SHA-256 and SIGNATURE.txt (HMAC over manifest)
+- chore(cli): add scripts/verify_export.py for one-command integrity verification
+- tests: CSRF and export signing tests; acceptance scripts wired into CI

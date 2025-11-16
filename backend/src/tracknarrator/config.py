@@ -72,4 +72,6 @@ TN_UI_TTL_S = int(os.getenv("TN_UI_TTL_S", "3600"))
 TN_COOKIE_SECURE = os.getenv("TN_COOKIE_SECURE", "0") == "1"
 # Step 18: optional Admin API-key allowlist (comma-separated, empty means off)
 TN_UI_KEYS = [x.strip() for x in os.getenv("TN_UI_KEYS", "").split(",") if x.strip()]
-# Step 18: audit signing secret (fallback to share secret if available)
+# Step 19: CSRF & export signing secrets (fallback to share secret if available)
+TN_CSRF_SECRET = os.getenv("TN_CSRF_SECRET", os.getenv("TN_SHARE_SECRET", os.getenv("SHARE_SECRET", "tn-csrf")) )
+TN_EXPORT_SIGNING = os.getenv("TN_EXPORT_SIGNING", "1") == "1"

@@ -140,6 +140,8 @@ curl "http://localhost:8000/shared/{token}/summary"
 - `sparklines.json` - Telemetry sparklines
 - `kpis.json` - Key performance indicators
 - `coach_score.json` - Coach v1.5 scoring with dimensions and badge
+- `MANIFEST.json` - File manifest with SHA256 hashes (when signing enabled)
+- `SIGNATURE.txt` - HMAC-SHA256 signature over manifest (when signing enabled)
 
 ## CORS Configuration
 
@@ -165,3 +167,23 @@ curl "http://localhost:8000/shared/{token}/summary"
 - Audit: signed records stored in SQLite table `audits`; developer endpoint `GET /dev/audits` returns recent entries.
 - Rate limiting: simple token bucket per remote address (burst 20, ~5 rps). Excess returns HTTP 429.
 - Cookies: `TN_UI_TTL_S` controls login TTL seconds. Set `TN_COOKIE_SECURE=1` under HTTPS.
+
+### Security Features (Step 19)
+- **CSRF Protection**:
+  - Hidden field `csrf` is required on UI POST/DELETE operations
+  - Token = HMAC(TN_CSRF_SECRET, cookie + 5-min bucket)
+  - Stateless and time-bounded implementation
+  - Prevents Cross-Site Request Forgery attacks
+  - Configure with: `TN_CSRF_SECRET=change-me` (fallbacks to SHARE_SECRET)
+
+- **Export Signing**:
+  - Export ZIP includes `MANIFEST.json` (sha256 per file) and `SIGNATURE.txt`
+  - Signature is HMAC-SHA256 over manifest using SHARE_SECRET/TN_SHARE_SECRET
+  - Provides integrity verification for exported data
+  - Verify with:
+    ```bash
+    python scripts/verify_export.py export.zip
+    ```
+  - Configure with:
+    - `TN_EXPORT_SIGNING=1` (default: enabled)
+    - `TN_CSRF_SECRET=change-me` (fallbacks to SHARE_SECRET)

@@ -1,9 +1,16 @@
 from fastapi.testclient import TestClient
 from .test_helpers import create_test_client_with_env
 import json
+import re
 
 def _login(client, key="demo-key", uik=None):
-    data = {"key": key}
+    # Get CSRF token first
+    page = client.get("/ui/login").text
+    import re
+    token_match = re.search(r'name="csrf" value="([0-9a-f]{64})"', page)
+    csrf_token = token_match.group(1) if token_match else ""
+    
+    data = {"key": key, "csrf": csrf_token}
     if uik:
         data["uik"] = uik
     r = client.post("/ui/login", data=data, follow_redirects=False)
@@ -36,7 +43,12 @@ def test_allowlist_and_rate_and_audit(fixtures_dir):
     sessions = r.json().get("sessions", [])
     assert len(sessions) > 0, "No sessions found after seeding"
     sid = sessions[0]["session_id"]
-    r = client.post(f"/ui/share/{sid}", cookies={"tn_ui": ui, "tn_uik": uik})
+    # Get CSRF token from UI page first
+    home = client.get("/ui", cookies={"tn_ui": ui, "tn_uik": uik}).text
+    token_match = re.search(r'name="csrf" value="([0-9a-f]{64})"', home)
+    csrf_token = token_match.group(1) if token_match else ""
+    
+    r = client.post(f"/ui/share/{sid}?csrf={csrf_token}", cookies={"tn_ui": ui, "tn_uik": uik})
     assert r.status_code == 200
     # audit endpoint should contain login/upload/share entries
     logs = client.get("/dev/audits").json()

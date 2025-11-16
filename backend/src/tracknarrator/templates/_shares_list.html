@@ -14,7 +14,7 @@
       <td>
         <a class="btn" href="/shared/{{ it.token }}/summary" target="_blank">Open</a>
         <a class="btn" href="/docs/share.html?token={{ it.token }}" target="_blank">Viewer</a>
-        <button class="btn" hx-delete="/ui/share/{{ it.token }}" hx-target="closest tr"
+        <button class="btn" hx-delete="/ui/share/{{ it.token }}?csrf={{ csrf }}" hx-target="closest tr"
           hx-swap="outerHTML">Revoke</button>
       </td>
     </tr>

@@ -16,7 +16,7 @@
         <a class="btn" href="/session/{{ s.session_id }}/summary" target="_blank">Summary</a>
         <a class="btn" href="/session/{{ s.session_id }}/coach" target="_blank">Coach</a>
         <a class="btn" href="/session/{{ s.session_id }}/export" target="_blank">Export</a>
-        <button class="btn" hx-post="/ui/share/{{ s.session_id }}" hx-target="#shares-{{ s.session_id }}"
+        <button class="btn" hx-post="/ui/share/{{ s.session_id }}?csrf={{ csrf }}" hx-target="#shares-{{ s.session_id }}"
           hx-swap="innerHTML">Create Share</button>
         <button class="btn" hx-get="/ui/shares?session_id={{ s.session_id }}" hx-target="#shares-{{ s.session_id }}"
           hx-swap="innerHTML">List Shares</button>

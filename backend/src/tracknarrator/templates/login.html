@@ -6,6 +6,7 @@
   <div class="row">
     <input type="password" name="key" placeholder="UI Key" required />
     <input type="text" name="uik" placeholder="Allowlist Key (optional)"/>
+    <input type="hidden" name="csrf" value="{{ csrf }}"/>
     <button class="btn" type="submit">Login</button>
   </div>
 </form>
