@@ -11,25 +11,23 @@ mkdir -p docs/data
 LOG="/tmp/dev_pages.log"
 
 start_server() {
-  if [ -f "backend/Makefile" ] && grep -qE '^[[:space:]]*dev:' backend/Makefile; then
-    echo "[server] make -C backend dev"
-    make -C backend dev > "$LOG" 2>&1 &
-    echo $! > /tmp/tn_pages_pid
-    return 0
-  fi
   if command -v uv >/dev/null 2>&1; then
-    echo "[server] uv run (uvicorn) in backend/"
-    ( cd backend && uv run uvicorn tracknarrator.main:app --host 127.0.0.1 --port 8000 ) > "$LOG" 2>&1 &
+    echo "[server] uv run uvicorn (backend/)"
+    ( cd backend && TN_UI_KEY="${TN_UI_KEY:-ci-demo}" TN_UI_KEYS="${TN_UI_KEYS:-ci-demo}" \
+      TN_CSRF_SECRET="${TN_CSRF_SECRET:-ci-csrf}" TN_COOKIE_SECURE="0" \
+      uv run uvicorn tracknarrator.main:app --host 127.0.0.1 --port 8000 ) > "$LOG" 2>&1 &
     echo $! > /tmp/tn_pages_pid
     return 0
   fi
   if command -v python >/dev/null 2>&1; then
-    echo "[server] python -m uvicorn in backend/"
-    ( cd backend && python -m uvicorn tracknarrator.main:app --host 127.0.0.1 --port 8000 ) > "$LOG" 2>&1 &
+    echo "[server] python -m uvicorn (backend/)"
+    ( cd backend && TN_UI_KEY="${TN_UI_KEY:-ci-demo}" TN_UI_KEYS="${TN_UI_KEYS:-ci-demo}" \
+      TN_CSRF_SECRET="${TN_CSRF_SECRET:-ci-csrf}" TN_COOKIE_SECURE="0" \
+      python -m uvicorn tracknarrator.main:app --host 127.0.0.1 --port 8000 ) > "$LOG" 2>&1 &
     echo $! > /tmp/tn_pages_pid
     return 0
   fi
-  echo "[server] No launcher found (make/uv/python)"
+  echo "[server] No uv/python found"
   return 1
 }
 
