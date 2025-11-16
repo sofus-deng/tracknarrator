@@ -3,25 +3,25 @@ set -euo pipefail
 
 echo "Running acceptance step 3: weather E2E check"
 
-# Normalize to repo root no matter where CI calls this script from
+# Normalize to repo root
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
 LOG="/tmp/dev_step3.log"
 
-# Start server and capture logs for troubleshooting
-(make dev > "$LOG" 2>&1 &) ; DEV_PID=$!
+# Start dev server in current shell; capture PID via $!
+make dev > "$LOG" 2>&1 & 
+DEV_PID=$!
+
 cleanup() {
-  # Always show tail of server log for postmortem
-  echo "--- tail of server log ---"
+  echo "--- tail of server log (accept_step3) ---"
   tail -n 200 "$LOG" || true
-  # Shutdown if still alive
   kill "$DEV_PID" >/dev/null 2>&1 || true
   wait "$DEV_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-# Wait for server to be ready (prefer /docs if /health not available)
+# Wait for readiness
 READY=0
 for i in {1..120}; do
   if curl -sf http://127.0.0.1:8000/docs >/dev/null 2>&1; then READY=1; break; fi
@@ -32,7 +32,7 @@ if [ "$READY" -ne 1 ]; then
   exit 20
 fi
 
-# Seed the known-good fixture bundle (path relative to repo root)
+# Seed fixture
 BUNDLE="backend/tests/fixtures/bundle_sample_barber.json"
 if [ ! -f "$BUNDLE" ]; then
   echo "Missing fixture: $BUNDLE"
@@ -42,7 +42,7 @@ curl -fsS --retry 5 --retry-all-errors -X POST \
   -H 'Content-Type: application/json' --data-binary @"$BUNDLE" \
   http://127.0.0.1:8000/dev/seed >/dev/null
 
-# Find a session id robustly
+# Obtain session id
 SID="$(curl -fsS --retry 5 --retry-all-errors http://127.0.0.1:8000/sessions | python - <<'PY'
 import sys,json
 arr=json.loads(sys.stdin.read())
@@ -55,13 +55,11 @@ if [ -z "$SID" ]; then
 fi
 echo "Using session ID: $SID"
 
-# Weather samples expected by Step 3
+# Weather samples
 FIX="backend/tests/fixtures"
 OK="$FIX/weather_ok.csv"
 UTC="$FIX/weather_utc.csv"
 SEM="$FIX/weather_semicolon.csv"
-
-# Defensive: fail loudly if samples are missing
 for f in "$OK" "$UTC" "$SEM"; do
   if [ ! -f "$f" ]; then
     echo "Missing weather sample: $f"
@@ -69,12 +67,9 @@ for f in "$OK" "$UTC" "$SEM"; do
   fi
 done
 
-# Helper: call /dev/inspect/weather and validate contract
 inspect_weather() {
   local file="$1"
   local label="$2"
-  # Most implementations accept multipart upload to /dev/inspect/weather
-  # with optional session_id; keep both for compatibility
   RESP="$(curl -fsS --retry 5 --retry-all-errors -X POST \
     -F "file=@${file}" \
     "http://127.0.0.1:8000/dev/inspect/weather?session_id=${SID}" || true)"
@@ -82,7 +77,6 @@ inspect_weather() {
     echo "[${label}] empty response from /dev/inspect/weather"
     exit 26
   fi
-  # Validate keys: headers/recognized/reasons must exist
   echo "$RESP" | python - <<'PY'
 import sys,json
 j=json.loads(sys.stdin.read())
