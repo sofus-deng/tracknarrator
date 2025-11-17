@@ -83,9 +83,25 @@ print(sid)
 PY
 )"
 
-# create share token
+# wait until the session is queryable to avoid 404 race
+wait_for_session() {
+  local sid="$1"
+  # try summary endpoint first
+  for _ in $(seq 1 60); do
+    code="$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/session/${sid}/summary")" || code=000
+    if [ "$code" = "200" ]; then return 0; fi
+    # fallback: check it appears in /sessions listing
+    if curl -sf "http://127.0.0.1:8000/sessions" | grep -q "\"${sid}\""; then return 0; fi
+    sleep 0.5
+  done
+  echo "Session ${sid} not visible after wait"
+  return 1
+}
+wait_for_session "$SID"
+
+# create share token (now that session exists)
 SHARE_JSON="$TMP/share.json"
-curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' \
+curl -fsS --retry 5 --retry-all-errors -X POST -H 'Content-Type: application/json' -d '{}' \
   "http://127.0.0.1:8000/share/${SID}" -o "$SHARE_JSON"
 
 TOKEN="$(python - "$SHARE_JSON" <<'PY'
