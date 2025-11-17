@@ -46,25 +46,66 @@ for _ in $(seq 1 180); do
 done
 curl -sf http://127.0.0.1:8000/docs >/dev/null 2>&1 || { echo "Server not ready"; exit 1; }
 
-# 1) GET login page & extract CSRF
+# 1) GET login page & extract CSRF (multiple strategies)
 LOGIN_HTML="$TMP/login.html"
 curl -fsS -c "$COOK" -b "$COOK" http://127.0.0.1:8000/ui/login -o "$LOGIN_HTML"
 [ -s "$LOGIN_HTML" ] || { echo "login page empty"; exit 2; }
 
-CSRF="$(grep -oE 'name="csrf_token"[^>]*value="[^"]*"' "$LOGIN_HTML" | sed -E 's/.*value="([^"]*)".*/\1/' | head -n1 || true)"
-[ -n "${CSRF}" ] || { echo "csrf token not found"; exit 3; }
+# Flatten for simpler regex
+FLAT_HTML="$TMP/login_flat.html"
+tr '\n' ' ' < "$LOGIN_HTML" > "$FLAT_HTML" || cp "$LOGIN_HTML" "$FLAT_HTML"
 
-# 2) POST login (key + allow_key for compatibility)
+extract_csrf_from_html() {
+  python - <<'PY'
+import re,sys,io
+p=sys.argv[1]
+html=open(p,'r',encoding='utf-8',errors='ignore').read()
+# Try exact name
+m=re.search(r'name="csrf_token"\s+value="([^"]+)"', html)
+if not m:
+    # Any input whose name starts with csrf
+    m=re.search(r'name="csrf[^"]*"\s+value="([^"]+)"', html)
+if not m:
+    # data-csrf attribute
+    m=re.search(r'data-csrf="([^"]+)"', html)
+if not m:
+    # meta tag
+    m=re.search(r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"', html, re.IGNORECASE)
+if not m:
+    # meta tag with property
+    m=re.search(r'<meta[^>]+property="csrf-token"[^>]+content="([^"]+)"', html, re.IGNORECASE)
+print(m.group(1) if m else(""))
+PY
+"$FLAT_HTML"
+}
+
+extract_csrf_from_cookies() {
+  # Netscape cookie jar format: columns... name \t value
+  awk 'tolower($6) ~ /csrf/ {print $7}' "$COOK" 2>/dev/null | tail -n1 || true
+}
+
+CSRF="$(extract_csrf_from_html)"
+if [ -z "${CSRF}" ]; then
+  CSRF="$(extract_csrf_from_cookies || true)"
+fi
+
+if [ -z "${CSRF}" ]; then
+  echo "csrf token not found (html/cookie)"; exit 3
+fi
+
+# 2) POST login (key + allowlist) — send as form fields and header
 KEY="${TN_UI_KEY:-ci-demo}"
-POST_DATA="key=${KEY}&allow_key=${KEY}&csrf_token=${CSRF}"
-curl -fsS -L -c "$COOK" -b "$COOK" -H "Content-Type: application/x-www-form-urlencoded" \
+POST_DATA="key=${KEY}&allow_key=${KEY}&allowlist_key=${KEY}&csrf=${CSRF}&csrf_token=${CSRF}"
+curl -fsS -L -c "$COOK" -b "$COOK" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -H "X-CSRF-Token: ${CSRF}" \
      -d "$POST_DATA" http://127.0.0.1:8000/ui/login -o "$TMP/login_resp.html"
 
 # 3) Verify authenticated UI page
 curl -fsS -c "$COOK" -b "$COOK" http://127.0.0.1:8000/ui -o "$TMP/ui.html"
 grep -E "Upload|Sessions|Shares" "$TMP/ui.html" >/dev/null || { echo "UI not authenticated"; exit 4; }
 
-# 4) Exercise API flow: upload → sessions → share → revoke (proves UI key gating not blocking API)
+# 4) Exercise API flow: upload → sessions → share → revoke
 GPX="$TMP/min.gpx"
 cat > "$GPX" <<'GPX'
 <gpx version="1.1" creator="tn-accept">
