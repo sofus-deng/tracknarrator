@@ -3,6 +3,8 @@
 
 FastAPI backend for racing data import and analysis.
 
+> ℹ️ GitHub Pages 行為：此專案若為 **Private**，Actions 會自動跳過 Pages 部署；將 repo 設為 **Public** 或升級到 Pro/Team 後即可啟用。
+
 ## Features
 
 - Import TRD long CSV telemetry data with pivot functionality
