@@ -62,42 +62,42 @@ if ! curl -fsS --retry 5 --retry-all-errors -X POST \
 fi
 [ -s "$UPLOAD_JSON" ] || { echo "Empty upload response"; exit 2; }
 
-# extract session_id from JSON safely
-python - "$UPLOAD_JSON" <<'PY'
-import sys, json
-p=sys.argv[1]
-data=open(p,"rb").read().decode("utf-8","ignore")
-j=json.loads(data)
-sid=j.get("session_id") or j.get("id") or j.get("sessionId")
-assert isinstance(sid,str) and len(sid)>0, "missing session_id"
-print(sid)
+# derive the real persisted session_id from /sessions (some importers emit placeholder IDs)
+get_latest_sid() {
+  python - <<'PY'
+import json,sys,urllib.request,time
+def pick_id(item):
+    if isinstance(item,str): return item
+    if isinstance(item,dict):
+        return item.get("id") or item.get("session_id") or item.get("sid")
+    return None
+url="http://127.0.0.1:8000/sessions"
+for _ in range(120):  # up to ~60s
+    try:
+        raw=urllib.request.urlopen(url,timeout=2).read().decode("utf-8","ignore")
+        j=json.loads(raw)
+        arr = j.get("sessions") if isinstance(j,dict) else j
+        if isinstance(arr,list) and arr:
+            sid = pick_id(arr[0])
+            if sid:
+                print(sid)
+                sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(0.5)
+print("")
 PY
-SID="$(python - "$UPLOAD_JSON" <<'PY'
-import sys, json
-p=sys.argv[1]
-data=open(p,"rb").read().decode("utf-8","ignore")
-j=json.loads(data)
-sid=j.get("session_id") or j.get("id") or j.get("sessionId")
-assert isinstance(sid,str) and len(sid)>0
-print(sid)
-PY
-)"
-
-# wait until the session is queryable to avoid 404 race
-wait_for_session() {
-  local sid="$1"
-  # try summary endpoint first
-  for _ in $(seq 1 60); do
-    code="$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/session/${sid}/summary")" || code=000
-    if [ "$code" = "200" ]; then return 0; fi
-    # fallback: check it appears in /sessions listing
-    if curl -sf "http://127.0.0.1:8000/sessions" | grep -q "\"${sid}\""; then return 0; fi
-    sleep 0.5
-  done
-  echo "Session ${sid} not visible after wait"
-  return 1
 }
-wait_for_session "$SID"
+SID="$(get_latest_sid)"
+[ -n "${SID}" ] || { echo "No session available in /sessions"; exit 2; }
+
+# hard check summary 200 before sharing
+for _ in $(seq 1 60); do
+  code="$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/session/${SID}/summary")" || code=000
+  [ "$code" = "200" ] && break
+  sleep 0.5
+done
+[ "$code" = "200" ] || { echo "summary not ready for ${SID}"; exit 2; }
 
 # create share token (now that session exists)
 SHARE_JSON="$TMP/share.json"
