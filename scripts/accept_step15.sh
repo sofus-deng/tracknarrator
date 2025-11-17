@@ -64,7 +64,7 @@ fi
 
 # derive the real persisted session_id from /sessions (some importers emit placeholder IDs)
 get_latest_sid() {
-  python - <<'PY'
+  python3 - <<'PY'
 import json,sys,urllib.request,time
 def pick_id(item):
     if isinstance(item,str): return item
@@ -104,7 +104,7 @@ SHARE_JSON="$TMP/share.json"
 curl -fsS --retry 5 --retry-all-errors -X POST -H 'Content-Type: application/json' -d '{}' \
   "http://127.0.0.1:8000/share/${SID}" -o "$SHARE_JSON"
 
-TOKEN="$(python - "$SHARE_JSON" <<'PY'
+TOKEN="$(python3 - "$SHARE_JSON" <<'PY'
 import sys,json
 j=json.load(open(sys.argv[1],"r",encoding="utf-8"))
 tok=j.get("token") or j.get("share_token")
@@ -116,7 +116,7 @@ PY
 # fetch shared summary
 SUM_JSON="$TMP/summary.json"
 curl -fsS "http://127.0.0.1:8000/shared/${TOKEN}/summary" -o "$SUM_JSON"
-python - "$SUM_JSON" <<'PY'
+python3 - "$SUM_JSON" <<'PY'
 import sys,json
 j=json.load(open(sys.argv[1],"r",encoding="utf-8"))
 for k in ("events","cards","sparklines"):

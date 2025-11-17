@@ -1251,7 +1251,13 @@ async def upload_file(
                                     f"zip_{int(time.time()*1000)}"
                                 )
                                 if result.bundle:
-                                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                                    bundle = result.bundle
+                                    session_id = bundle.session.id
+                                    # Persist to storage
+                                    storage_session_id = upsert_session(bundle.model_dump(), name=name)
+                                    # Add to in-memory store
+                                    store.merge_bundle(session_id, bundle, src="upload_zip_racechrono")
+                                    _logger.info(f"Uploaded session {session_id} persisted to both DB and in-memory store")
                                     return {"session_id": session_id}
                             except:
                                 pass
@@ -1263,7 +1269,13 @@ async def upload_file(
                                     f"zip_{int(time.time()*1000)}"
                                 )
                                 if result.bundle:
-                                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                                    bundle = result.bundle
+                                    session_id = bundle.session.id
+                                    # Persist to storage
+                                    storage_session_id = upsert_session(bundle.model_dump(), name=name)
+                                    # Add to in-memory store
+                                    store.merge_bundle(session_id, bundle, src="upload_zip_trd_long")
+                                    _logger.info(f"Uploaded session {session_id} persisted to both DB and in-memory store")
                                     return {"session_id": session_id}
                             except:
                                 pass
@@ -1277,7 +1289,12 @@ async def upload_file(
                                     session_id=f"zip_{int(time.time()*1000)}",
                                     name=name
                                 )
-                                session_id = upsert_session(bundle.model_dump(), name=name)
+                                session_id = bundle.session.id
+                                # Persist to storage
+                                storage_session_id = upsert_session(bundle.model_dump(), name=name)
+                                # Add to in-memory store
+                                store.merge_bundle(session_id, bundle, src="upload_zip_gpx")
+                                _logger.info(f"Uploaded session {session_id} persisted to both DB and in-memory store")
                                 return {"session_id": session_id}
                             except:
                                 pass
@@ -1295,7 +1312,12 @@ async def upload_file(
                     session_id=f"gpx_{int(time.time()*1000)}",
                     name=name
                 )
-                session_id = upsert_session(bundle.model_dump(), name=name)
+                session_id = bundle.session.id
+                # Persist to storage
+                storage_session_id = upsert_session(bundle.model_dump(), name=name)
+                # Add to in-memory store
+                store.merge_bundle(session_id, bundle, src="upload_gpx")
+                _logger.info(f"Uploaded session {session_id} persisted to both DB and in-memory store")
                 return {"session_id": session_id}
             except Exception as e:
                 raise HTTPException(
@@ -1312,7 +1334,13 @@ async def upload_file(
                     f"csv_{int(time.time()*1000)}"
                 )
                 if result.bundle:
-                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                    bundle = result.bundle
+                    session_id = bundle.session.id
+                    # Persist to storage
+                    storage_session_id = upsert_session(bundle.model_dump(), name=name)
+                    # Add to in-memory store
+                    store.merge_bundle(session_id, bundle, src="upload_racechrono")
+                    _logger.info(f"Uploaded session {session_id} persisted to both DB and in-memory store")
                     return {"session_id": session_id}
             except:
                 pass
@@ -1324,7 +1352,13 @@ async def upload_file(
                     f"csv_{int(time.time()*1000)}"
                 )
                 if result.bundle:
-                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                    bundle = result.bundle
+                    session_id = bundle.session.id
+                    # Persist to storage
+                    storage_session_id = upsert_session(bundle.model_dump(), name=name)
+                    # Add to in-memory store
+                    store.merge_bundle(session_id, bundle, src="upload_trd_long")
+                    _logger.info(f"Uploaded session {session_id} persisted to both DB and in-memory store")
                     return {"session_id": session_id}
             except:
                 pass
@@ -1336,7 +1370,13 @@ async def upload_file(
                     f"csv_{int(time.time()*1000)}"
                 )
                 if result.bundle:
-                    session_id = upsert_session(result.bundle.model_dump(), name=name)
+                    bundle = result.bundle
+                    session_id = bundle.session.id
+                    # Persist to storage
+                    storage_session_id = upsert_session(bundle.model_dump(), name=name)
+                    # Add to in-memory store
+                    store.merge_bundle(session_id, bundle, src="upload_mylaps_sections")
+                    _logger.info(f"Uploaded session {session_id} persisted to both DB and in-memory store")
                     return {"session_id": session_id}
             except:
                 pass
