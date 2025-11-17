@@ -2,13 +2,13 @@ name: pages
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
     paths:
-      - "docs/**"
-      - "demo/**"
-      - "scripts/**"
-      - ".github/workflows/pages.yml"
-  workflow_dispatch:
+      - 'docs/**'
+      - 'backend/**'
+      - 'demo/**'
+      - 'scripts/**'
+      - '.github/workflows/pages.yml'
 
 permissions:
   contents: read
@@ -23,23 +23,29 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: 
-          python-version: "3.12"
-      - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-      - name: Generate demo + copy to docs/data
-        run: |
-          ./scripts/sync_demo_to_docs.sh
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+      - name: Generate demo artifacts into docs/data
+        run: ./scripts/sync_demo_to_docs.sh
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs
   deploy:
-    runs-on: ubuntu-latest
     needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
     steps:
-      - id: deployment
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
