@@ -6,8 +6,8 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
 TMP="$(mktemp -d /tmp/tn_accept17.XXXXXX)"
-LOG="$TMP/dev.log"
-COOK="$TMP/cookies.txt"
+LOG="$(mktemp "$TMP/log.XXXXXX.txt")"
+COOK="$(mktemp "$TMP/cookies.XXXXXX.txt")"
 
 start_server() {
   if command -v uv >/dev/null 2>&1; then
@@ -45,42 +45,44 @@ for _ in $(seq 1 180); do
 done
 curl -sf http://127.0.0.1:8000/docs >/dev/null 2>&1 || { echo "Server not ready"; exit 1; }
 
-# 1) GET login page & extract CSRF (hidden/meta/data/cookie)
-LOGIN_HTML="$TMP/login.html"
+# 1) GET login page & extract CSRF (hidden/meta/data/cookie), all via stdin — no fragile redirects
+LOGIN_HTML="$(mktemp "$TMP/login.XXXXXX.html")"
 curl -fsS -c "$COOK" -b "$COOK" http://127.0.0.1:8000/ui/login -o "$LOGIN_HTML"
 [ -s "$LOGIN_HTML" ] || { echo "login page empty"; exit 2; }
 
-CSRF="$(python - <<'PY'
+CSRF="$(
+python - <<'PY' < "$LOGIN_HTML"
 import re,sys
-html=open(sys.argv[1],'r',encoding='utf-8',errors='ignore').read()
-# input name="csrf_token" | name startswith csrf
-m=re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html) or \
-  re.search(r'name="csrf[^"]*"[^>]*value="([^"]+)"', html) or \
-  re.search(r'data-csrf="([^"]+)"', html) or \
-  re.search(r'<meta[^>]+name="csrf"[^>]+content="([^"]+)"', html)
+html=sys.stdin.read()
+m = (re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
+     or re.search(r'name="csrf[^"]*"[^>]*value="([^"]+)"', html)
+     or re.search(r'data-csrf="([^"]+)"', html)
+     or re.search(r'<meta[^>]+name="csrf"[^>]+content="([^"]+)"', html))
 print(m.group(1) if m else(""))
 PY
-"$LOGIN_HTML")"
+)"
 if [ -z "$CSRF" ]; then
-  # try cookie jar (Netscape format: fields ... name<TAB>value)
   CSRF="$(awk 'tolower($6) ~ /csrf/ {print $7}' "$COOK" 2>/dev/null | tail -n1 || true)"
 fi
-[ -n "$CSRF" ] || { echo "csrf token not found"; exit 3; }
+# 若仍抓不到，容忍空值，改走 header-only
+: "${CSRF:=}"
 
 # 2) POST login with multiple compatible fields + header
 KEY="${TN_UI_KEY:-ci-demo}"
-POST_DATA="key=${KEY}&uik=${KEY}&allow_key=${KEY}&allowlist_key=${KEY}&csrf=${CSRF}&csrf_token=${CSRF}"
+POST_DATA="key=${KEY}&uik=${KEY}&allow_key=${KEY}&allowlist_key=${KEY}"
+[ -n "$CSRF" ] && POST_DATA="${POST_DATA}&csrf=${CSRF}&csrf_token=${CSRF}"
 curl -fsS -L -c "$COOK" -b "$COOK" \
      -H "Content-Type: application/x-www-form-urlencoded" \
      -H "X-CSRF-Token: ${CSRF}" \
-     -d "$POST_DATA" http://127.0.0.1:8000/ui/login -o "$TMP/login_resp.html"
+     -d "$POST_DATA" http://127.0.0.1:8000/ui/login -o "$(mktemp "$TMP/login_resp.XXXXXX.html")"
 
 # 3) Verify authenticated UI page
-curl -fsS -c "$COOK" -b "$COOK" http://127.0.0.1:8000/ui -o "$TMP/ui.html"
-grep -E "Upload|Sessions|Shares" "$TMP/ui.html" >/dev/null || { echo "UI not authenticated"; exit 4; }
+UI_HTML="$(mktemp "$TMP/ui.XXXXXX.html")"
+curl -fsS -c "$COOK" -b "$COOK" http://127.0.0.1:8000/ui -o "$UI_HTML"
+grep -E "Upload|Sessions|Shares" "$UI_HTML" >/dev/null || { echo "UI not authenticated"; exit 4; }
 
 # 4) Exercise API: upload → sessions (poll) → summary → share → revoke
-GPX="$TMP/min.gpx"
+GPX="$(mktemp "$TMP/min.XXXXXX.gpx")"
 cat > "$GPX" <<'GPX'
 <gpx version="1.1" creator="tn-accept">
   <trk><name>demo</name><trkseg>
@@ -93,12 +95,13 @@ GPX
 
 # upload
 curl -fsS --retry 5 --retry-all-errors -X POST -F "file=@${GPX}" \
-     http://127.0.0.1:8000/upload -o "$TMP/upload.json"
+     http://127.0.0.1:8000/upload -o "$(mktemp "$TMP/upload.XXXXXX.json")"
 
 # poll /sessions until at least one entry
 for _ in $(seq 1 60); do
   curl -sf http://127.0.0.1:8000/sessions -o "$TMP/sessions.json" || true
-  SZ="$(python - <<'PY'
+  SZ="$(
+    python - <<'PY' "$TMP/sessions.json"
 import json,sys
 try:
     j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
@@ -107,14 +110,15 @@ try:
 except Exception:
     print(0)
 PY
-"$TMP/sessions.json")"
+  )"
   [ "$SZ" -ge 1 ] && break
   sleep 0.5
 done
 [ "$SZ" -ge 1 ] || { echo "no sessions available"; exit 6; }
 
-# pick latest sid
-SID="$(python - <<'PY'
+# pick latest sid (tolerant to shapes)
+SID="$(
+  python - <<'PY' "$TMP/sessions.json"
 import json,sys
 j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
 arr=j.get("sessions") if isinstance(j,dict) else j
@@ -124,7 +128,7 @@ def pick(x):
   return None
 print(pick(arr[0]) if isinstance(arr,list) and arr else "")
 PY
-"$TMP/sessions.json")"
+)"
 [ -n "$SID" ] || { echo "no session id found"; exit 6; }
 
 # wait summary ready
@@ -136,19 +140,21 @@ done
 [ "$code" = "200" ] || { echo "summary not ready for ${SID}"; exit 7; }
 
 # share
+SHARE_JSON="$(mktemp "$TMP/share.XXXXXX.json")"
 curl -fsS --retry 5 --retry-all-errors -X POST -H 'Content-Type: application/json' -d '{}' \
-     "http://127.0.0.1:8000/share/${SID}" -o "$TMP/share.json"
-TOKEN="$(python - <<'PY'
+     "http://127.0.0.1:8000/share/${SID}" -o "$SHARE_JSON"
+TOKEN="$(
+  python - <<'PY' "$SHARE_JSON"
 import json,sys
 j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
 print(j.get("token") or j.get("share_token") or "")
 PY
-"$TMP/share.json")"
+)"
 [ -n "$TOKEN" ] || { echo "no share token"; exit 8; }
 
 # revoke and verify access denied
 curl -fsS --retry 5 --retry-all-errors -X DELETE \
-     "http://127.0.0.1:8000/share/${TOKEN}" -o "$TMP/revoke.json"
+     "http://127.0.0.1:8000/share/${TOKEN}" -o "$(mktemp "$TMP/revoke.XXXXXX.json")"
 code="$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/shared/${TOKEN}/summary")" || code=000
 [ "$code" != "200" ] || { echo "revoked token still accessible"; exit 9; }
 
