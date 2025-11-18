@@ -131,14 +131,18 @@ build_form() {
   if [ -n "${CSRFT:-}" ]; then
     q="${q}&${CSRFN}=${CSRFT}&csrf=${CSRFT}&csrf_token=${CSRFT}"
   fi
-  # tolerant hidden fields
-  python - "$TMP/form.json" <<'PY'
-import sys,json,urllib.parse
+  # tolerant hidden fields (no pipeline after heredoc to avoid syntax errors)
+  local hidden
+  hidden="$(python - "$TMP/form.json" <<'PY'
+import sys,json
 d=json.load(open(sys.argv[1]))
 pairs=d.get("hidden",[])
 print("&".join(f"{k}={v}" for k,v in pairs))
 PY
-  | awk '{print ($0!="") ? "&"$0 : "" }'
+)"
+  if [ -n "$hidden" ]; then
+    q="${q}&${hidden}"
+  fi
   echo "$q"
 }
 
