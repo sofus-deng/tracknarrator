@@ -12,6 +12,7 @@ LOG="$TMP/server.log"
 
 CURL_MAX_TIME="${CURL_MAX_TIME:-1}"
 READY_DEADLINE="${READY_DEADLINE:-20}"
+SUMMARY_WAIT_TRIES="${SUMMARY_WAIT_TRIES:-12}"
 
 # sensible defaults for Step 10
 export SHARE_SECRET="${SHARE_SECRET:-ci-share-secret}"
@@ -55,6 +56,39 @@ for _ in $(seq 1 $READY_DEADLINE); do
 done
 [ "$ready" -eq 1 ] || { echo "Server not ready"; exit 1; }
 
+# discover upload contract from openapi
+curl -sS --max-time 4 "http://127.0.0.1:8000/openapi.json" -o "$TMP/openapi.json" || true
+UPLOAD_HINTS="$(python - "$TMP/openapi.json" <<'PY'
+import sys,json
+try:
+  doc=json.load(open(sys.argv[1]))
+except Exception:
+  doc={}
+paths=doc.get("paths",{})
+schema=None
+for p, methods in paths.items():
+  if p.endswith("/upload") or p=="/upload":
+    for m, spec in methods.items():
+      rb=(spec or {}).get("requestBody",{})
+      content=(rb or {}).get("content",{})
+      if "multipart/form-data" in content:
+        schema=content["multipart/form-data"].get("schema",{})
+        break
+    if schema: break
+required=set(schema.get("required",[])) if schema else set()
+props=(schema or {}).get("properties",{}) if schema else {}
+# We will default file field to 'file' if exists; add any other required fields with defaults.
+hints=[]
+if props:
+  if "file" in props:
+    hints.append("file")
+  for k in required:
+    if k=="file": continue
+    hints.append(k)
+print(",".join(hints))
+PY
+)"
+
 # create a tiny GPX to ensure we have a session without relying on fixtures
 cat > "$TMP/ci.gpx" <<'GPX'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -67,18 +101,43 @@ cat > "$TMP/ci.gpx" <<'GPX'
 </gpx>
 GPX
 
-# upload GPX (multipart). Do NOT force MIME type; let server infer from filename.
-UPCODE="$(curl -sS -o "$TMP/upload.json" -w "%{http_code}" --max-time 5 \
-  -F "file=@$TMP/ci.gpx" http://127.0.0.1:8000/upload || true)"
-# fallback: some servers accept raw binary with ?filename=
+# upload GPX (multipart) according to openapi hints
+UPLOAD_URL="http://127.0.0.1:8000/upload"
+FORM_ARGS=(-F "file=@$TMP/ci.gpx")
+if [ -n "$UPLOAD_HINTS" ]; then
+  IFS=',' read -ra H <<< "$UPLOAD_HINTS"
+  found_file=0
+  for k in "${H[@]}"; do
+    [ -z "$k" ] && continue
+    if [ "$k" = "file" ]; then found_file=1; continue; fi
+    # best-effort defaults: kind=gpx / source=accept / filename=ci.gpx
+    case "$k" in
+      kind) FORM_ARGS+=(-F "kind=gpx");;
+      source) FORM_ARGS+=(-F "source=accept");;
+      filename) FORM_ARGS+=(-F "filename=ci.gpx");;
+      *) FORM_ARGS+=(-F "${k}=ci");;
+    esac
+  done
+  if [ "$found_file" -eq 0 ]; then
+    # some schemas might use a different field name for file - try 'upload'
+    FORM_ARGS=(-F "upload=@$TMP/ci.gpx" "${FORM_ARGS[@]}")
+  fi
+fi
+UPCODE="$(curl -sS -o "$TMP/upload.json" -w "%{http_code}" --max-time 8 \
+  "${FORM_ARGS[@]}" "$UPLOAD_URL" || true)"
 if [ "$UPCODE" != "200" ]; then
-  UPCODE="$(curl -sS -o "$TMP/upload2.json" -w "%{http_code}" --max-time 5 \
+  echo "[upload] HTTP $UPCODE"; echo "--- body ---"; cat "$TMP/upload.json" || true; echo "------------"
+  # fallback: raw binary as last resort
+  UPCODE="$(curl -sS -o "$TMP/upload2.json" -w "%{http_code}" --max-time 6 \
     -H "Content-Type: application/octet-stream" --data-binary "@$TMP/ci.gpx" \
-    "http://127.0.0.1:8000/upload?filename=ci.gpx" || true)"
+    "$UPLOAD_URL?filename=ci.gpx" || true)"
+  if [ "$UPCODE" != "200" ]; then
+    echo "[upload fallback] HTTP $UPCODE"; echo "--- body2 ---"; cat "$TMP/upload2.json" || true; echo "-------------"
+  fi
 fi
 
 # resolve session id robustly from /sessions (works regardless of upload response shape)
-curl -sS --max-time 5 http://127.0.0.1:8000/sessions -o "$TMP/sessions.json" >/dev/null
+curl -sS --max-time 6 http://127.0.0.1:8000/sessions -o "$TMP/sessions.json" >/dev/null
 SID="$(
 python - <<'PY' "$TMP/sessions.json"
 import sys, json
@@ -108,7 +167,7 @@ echo "session: $SID"
 
 # wait summary ready (handle transient 404)
 ok=0
-for _ in $(seq 1 10); do
+for _ in $(seq 1 $SUMMARY_WAIT_TRIES); do
   code="$(curl -s -o "$TMP/summary.json" -w "%{http_code}" --max-time 2 "http://127.0.0.1:8000/session/$SID/summary")" || true
   if [ "$code" = "200" ]; then ok=1; break; fi
   sleep 0.5
