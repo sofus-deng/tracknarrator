@@ -5,9 +5,8 @@ echo "Running acceptance step 17: Admin UI login + basic flows"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
-LOG="/tmp/dev_step17.log"
-TMP="/tmp/tn_accept17"
-mkdir -p "$TMP"
+TMP="$(mktemp -d /tmp/tn_accept17.XXXXXX)"
+LOG="$TMP/dev.log"
 COOK="$TMP/cookies.txt"
 
 start_server() {
@@ -26,7 +25,6 @@ start_server() {
   fi
   echo $! > "$TMP/pid"
 }
-
 cleanup() {
   echo "--- tail of server log (accept_step17) ---"
   tail -n 200 "$LOG" || true
@@ -34,6 +32,7 @@ cleanup() {
     kill "$(cat "$TMP/pid")" >/dev/null 2>&1 || true
     wait "$(cat "$TMP/pid")" 2>/dev/null || true
   fi
+  rm -rf "$TMP" || true
 }
 trap cleanup EXIT
 
@@ -41,61 +40,36 @@ start_server
 
 # wait server ready
 for _ in $(seq 1 180); do
-  if curl -sf http://127.0.0.1:8000/docs >/dev/null 2>&1; then break; fi
+  curl -sf http://127.0.0.1:8000/docs >/dev/null 2>&1 && break
   sleep 0.5
 done
 curl -sf http://127.0.0.1:8000/docs >/dev/null 2>&1 || { echo "Server not ready"; exit 1; }
 
-# 1) GET login page & extract CSRF (multiple strategies)
+# 1) GET login page & extract CSRF (hidden/meta/data/cookie)
 LOGIN_HTML="$TMP/login.html"
 curl -fsS -c "$COOK" -b "$COOK" http://127.0.0.1:8000/ui/login -o "$LOGIN_HTML"
 [ -s "$LOGIN_HTML" ] || { echo "login page empty"; exit 2; }
 
-# Flatten for simpler regex
-FLAT_HTML="$TMP/login_flat.html"
-tr '\n' ' ' < "$LOGIN_HTML" > "$FLAT_HTML" || cp "$LOGIN_HTML" "$FLAT_HTML"
-
-extract_csrf_from_html() {
-  python - <<'PY'
-import re,sys,io
-p=sys.argv[1]
-html=open(p,'r',encoding='utf-8',errors='ignore').read()
-# Try exact name
-m=re.search(r'name="csrf_token"\s+value="([^"]+)"', html)
-if not m:
-    # Any input whose name starts with csrf
-    m=re.search(r'name="csrf[^"]*"\s+value="([^"]+)"', html)
-if not m:
-    # data-csrf attribute
-    m=re.search(r'data-csrf="([^"]+)"', html)
-if not m:
-    # meta tag
-    m=re.search(r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"', html, re.IGNORECASE)
-if not m:
-    # meta tag with property
-    m=re.search(r'<meta[^>]+property="csrf-token"[^>]+content="([^"]+)"', html, re.IGNORECASE)
+CSRF="$(python - <<'PY'
+import re,sys
+html=open(sys.argv[1],'r',encoding='utf-8',errors='ignore').read()
+# input name="csrf_token" | name startswith csrf
+m=re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html) or \
+  re.search(r'name="csrf[^"]*"[^>]*value="([^"]+)"', html) or \
+  re.search(r'data-csrf="([^"]+)"', html) or \
+  re.search(r'<meta[^>]+name="csrf"[^>]+content="([^"]+)"', html)
 print(m.group(1) if m else(""))
 PY
-"$FLAT_HTML"
-}
-
-extract_csrf_from_cookies() {
-  # Netscape cookie jar format: columns... name \t value
-  awk 'tolower($6) ~ /csrf/ {print $7}' "$COOK" 2>/dev/null | tail -n1 || true
-}
-
-CSRF="$(extract_csrf_from_html)"
-if [ -z "${CSRF}" ]; then
-  CSRF="$(extract_csrf_from_cookies || true)"
+"$LOGIN_HTML")"
+if [ -z "$CSRF" ]; then
+  # try cookie jar (Netscape format: fields ... name<TAB>value)
+  CSRF="$(awk 'tolower($6) ~ /csrf/ {print $7}' "$COOK" 2>/dev/null | tail -n1 || true)"
 fi
+[ -n "$CSRF" ] || { echo "csrf token not found"; exit 3; }
 
-if [ -z "${CSRF}" ]; then
-  echo "csrf token not found (html/cookie)"; exit 3
-fi
-
-# 2) POST login (key + allowlist) — send as form fields and header
+# 2) POST login with multiple compatible fields + header
 KEY="${TN_UI_KEY:-ci-demo}"
-POST_DATA="key=${KEY}&allow_key=${KEY}&allowlist_key=${KEY}&csrf=${CSRF}&csrf_token=${CSRF}"
+POST_DATA="key=${KEY}&uik=${KEY}&allow_key=${KEY}&allowlist_key=${KEY}&csrf=${CSRF}&csrf_token=${CSRF}"
 curl -fsS -L -c "$COOK" -b "$COOK" \
      -H "Content-Type: application/x-www-form-urlencoded" \
      -H "X-CSRF-Token: ${CSRF}" \
@@ -105,7 +79,7 @@ curl -fsS -L -c "$COOK" -b "$COOK" \
 curl -fsS -c "$COOK" -b "$COOK" http://127.0.0.1:8000/ui -o "$TMP/ui.html"
 grep -E "Upload|Sessions|Shares" "$TMP/ui.html" >/dev/null || { echo "UI not authenticated"; exit 4; }
 
-# 4) Exercise API flow: upload → sessions → share → revoke
+# 4) Exercise API: upload → sessions (poll) → summary → share → revoke
 GPX="$TMP/min.gpx"
 cat > "$GPX" <<'GPX'
 <gpx version="1.1" creator="tn-accept">
@@ -120,21 +94,37 @@ GPX
 # upload
 curl -fsS --retry 5 --retry-all-errors -X POST -F "file=@${GPX}" \
      http://127.0.0.1:8000/upload -o "$TMP/upload.json"
-[ -s "$TMP/upload.json" ] || { echo "upload response empty"; exit 5; }
 
-# get real session_id from /sessions
-curl -fsS http://127.0.0.1:8000/sessions -o "$TMP/sessions.json"
+# poll /sessions until at least one entry
+for _ in $(seq 1 60); do
+  curl -sf http://127.0.0.1:8000/sessions -o "$TMP/sessions.json" || true
+  SZ="$(python - <<'PY'
+import json,sys
+try:
+    j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
+    arr=j.get('sessions') if isinstance(j,dict) else j
+    print(len(arr) if isinstance(arr,list) else 0)
+except Exception:
+    print(0)
+PY
+"$TMP/sessions.json")"
+  [ "$SZ" -ge 1 ] && break
+  sleep 0.5
+done
+[ "$SZ" -ge 1 ] || { echo "no sessions available"; exit 6; }
+
+# pick latest sid
 SID="$(python - <<'PY'
 import json,sys
-j=json.load(open("/tmp/tn_accept17/sessions.json","r",encoding="utf-8"))
-arr = j.get("sessions") if isinstance(j,dict) else j
+j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
+arr=j.get("sessions") if isinstance(j,dict) else j
 def pick(x):
   if isinstance(x,str): return x
   if isinstance(x,dict): return x.get("id") or x.get("session_id") or x.get("sid")
   return None
 print(pick(arr[0]) if isinstance(arr,list) and arr else "")
 PY
-)"
+"$TMP/sessions.json")"
 [ -n "$SID" ] || { echo "no session id found"; exit 6; }
 
 # wait summary ready
@@ -150,10 +140,10 @@ curl -fsS --retry 5 --retry-all-errors -X POST -H 'Content-Type: application/jso
      "http://127.0.0.1:8000/share/${SID}" -o "$TMP/share.json"
 TOKEN="$(python - <<'PY'
 import json,sys
-j=json.load(open("/tmp/tn_accept17/share.json","r",encoding="utf-8"))
+j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
 print(j.get("token") or j.get("share_token") or "")
 PY
-)"
+"$TMP/share.json")"
 [ -n "$TOKEN" ] || { echo "no share token"; exit 8; }
 
 # revoke and verify access denied
