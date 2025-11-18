@@ -26,3 +26,7 @@ node_modules/
 tmp/
 data/
 # Do NOT ignore fixtures/*.jsondemo/export/
+
+backend/.coverage
+backend/tracknarrator.db
+
