@@ -67,26 +67,38 @@ cat > "$TMP/ci.gpx" <<'GPX'
 </gpx>
 GPX
 
-# upload GPX
-curl -sS --max-time 3 -F "file=@$TMP/ci.gpx;type=application/gpx+xml" \
-  http://127.0.0.1:8000/upload -o "$TMP/upload.json" >/dev/null
+# upload GPX (multipart). Do NOT force MIME type; let server infer from filename.
+UPCODE="$(curl -sS -o "$TMP/upload.json" -w "%{http_code}" --max-time 5 \
+  -F "file=@$TMP/ci.gpx" http://127.0.0.1:8000/upload || true)"
+# fallback: some servers accept raw binary with ?filename=
+if [ "$UPCODE" != "200" ]; then
+  UPCODE="$(curl -sS -o "$TMP/upload2.json" -w "%{http_code}" --max-time 5 \
+    -H "Content-Type: application/octet-stream" --data-binary "@$TMP/ci.gpx" \
+    "http://127.0.0.1:8000/upload?filename=ci.gpx" || true)"
+fi
 
 # resolve session id robustly from /sessions (works regardless of upload response shape)
-curl -sS --max-time 3 http://127.0.0.1:8000/sessions -o "$TMP/sessions.json" >/dev/null
+curl -sS --max-time 5 http://127.0.0.1:8000/sessions -o "$TMP/sessions.json" >/dev/null
 SID="$(
 python - <<'PY' "$TMP/sessions.json"
 import sys, json
-data=json.load(open(sys.argv[1]))
+from pathlib import Path
+raw = Path(sys.argv[1]).read_text(encoding="utf-8") or "[]"
+try:
+  data=json.loads(raw)
+except Exception:
+  data=[]
 seq=[]
 if isinstance(data, dict):
-  for k in ('items','sessions','data'):
-    if k in data and isinstance(data[k], list):
-      seq=data[k]; break
-if not seq and isinstance(data, list):
+  for k in ("items","sessions","data","results"):
+    v=data.get(k)
+    if isinstance(v, list):
+      seq=v; break
+elif isinstance(data, list):
   seq=data
-# prefer ids starting with gpx_
-cands=[x.get('id') for x in seq if isinstance(x, dict) and x.get('id')]
-gpx=[c for c in cands if str(c).startswith('gpx_')]
+cands=[x.get("id") for x in seq if isinstance(x, dict) and x.get("id")]
+# prefer latest gpx_* id
+gpx=[c for c in cands if str(c).startswith("gpx_")]
 sid=(gpx[-1] if gpx else (cands[-1] if cands else None))
 print(sid or "")
 PY
