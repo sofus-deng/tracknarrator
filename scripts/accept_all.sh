@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
-TIMEOUT_PER_STEP="${TIMEOUT_PER_STEP:-300s}"  # 5 minutes per step default
+TIMEOUT_PER_STEP="${TIMEOUT_PER_STEP:-240s}"  # 4 minutes per step default
 STEPS=(
   "accept_step14.sh"
   "accept_step15.sh"
