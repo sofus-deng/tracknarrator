@@ -60,6 +60,58 @@ class MYLAPSSectionsCSVImporter:
     SECTION_ORDER = ["IM1a", "IM1", "IM2a", "IM2", "IM3a", "FL"]
     
     @classmethod
+    def validate_required_columns(cls, fieldnames: list[str]) -> None:
+        """
+        Validate that required columns are present in sections CSV file.
+        
+        Args:
+            fieldnames: List of column names from CSV header
+            
+        Raises:
+            ValueError: If required columns are missing
+        """
+        # Normalize field names for comparison
+        normalized_fields = [field.strip().lower() for field in fieldnames]
+        
+        # Check for required lap number fields
+        lap_number_fields = ['lap_number', 'lap', 'lapno']
+        has_lap_number = any(field in normalized_fields for field in lap_number_fields)
+        
+        # Check for required lap time fields
+        lap_time_fields = ['lap_time', 'laptime', 'time']
+        has_lap_time = any(field in normalized_fields for field in lap_time_fields)
+        
+        # Check for at least one section field using the actual patterns
+        has_section = False
+        for canonical_section in cls.SECTION_ORDER:
+            for pattern in cls.SECTION_PATTERNS[canonical_section]:
+                # Check if any header matches the pattern
+                for header in fieldnames:
+                    header_clean = header.strip().strip('"\'')
+                    if re.fullmatch(pattern, header_clean, re.IGNORECASE):
+                        has_section = True
+                        break
+                if has_section:
+                    break
+            if has_section:
+                break
+        
+        # Build list of missing required column types
+        missing_columns = []
+        if not has_lap_number:
+            missing_columns.append("LAP_NUMBER")
+        if not has_lap_time:
+            missing_columns.append("LAP_TIME")
+        if not has_section:
+            missing_columns.append("at least one section column (IM1a, IM1, etc.)")
+        
+        if missing_columns:
+            raise ValueError(
+                f"Barber sections import error: missing required columns: {', '.join(missing_columns)}. "
+                f"Check data/barber/sections.csv."
+            )
+
+    @classmethod
     def import_file(cls, file: BinaryIO | TextIO, session_id: str) -> ImportResult:
         """
         Import MYLAPS sections CSV file.
@@ -90,8 +142,15 @@ class MYLAPSSectionsCSVImporter:
             if not rows:
                 return ImportResult.failure(["Empty CSV file"])
             
+            # Validate required columns
+            fieldnames = reader.fieldnames or []
+            try:
+                cls.validate_required_columns(fieldnames)
+            except ValueError as e:
+                return ImportResult.failure([str(e)])
+            
             # Resolve headers to canonical section names
-            header_mapping, header_warnings = cls._resolve_headers(reader.fieldnames or [])
+            header_mapping, header_warnings = cls._resolve_headers(fieldnames)
             warnings.extend(header_warnings)
             
             if not header_mapping:
@@ -176,7 +235,7 @@ class MYLAPSSectionsCSVImporter:
             return ImportResult.success(bundle, warnings)
             
         except Exception as e:
-            return ImportResult.failure([f"Error processing MYLAPS sections CSV: {str(e)}"])
+            return ImportResult.failure([f"Barber sections import error: {str(e)}"])
     
     @classmethod
     def _resolve_headers(cls, fieldnames: List[str]) -> tuple[Dict[str, str], List[str]]:

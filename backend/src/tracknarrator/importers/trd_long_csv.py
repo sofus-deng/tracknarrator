@@ -43,6 +43,46 @@ class TRDLongCSVImporter:
     BRAKE_MIN, BRAKE_MAX = 0.0, 200.0
     
     @classmethod
+    def validate_required_columns(cls, fieldnames: list[str]) -> None:
+        """
+        Validate that required columns are present in the CSV file.
+        
+        Args:
+            fieldnames: List of column names from CSV header
+            
+        Raises:
+            ValueError: If required columns are missing
+        """
+        # Normalize field names for comparison
+        normalized_fields = [field.strip().lower() for field in fieldnames]
+        
+        # Check for required timestamp fields
+        timestamp_fields = ['timestamp', 'meta_time', 'ts_ms', 'timestamp_ms', 'time_ms']
+        has_timestamp = any(field in normalized_fields for field in timestamp_fields)
+        
+        # Check for required telemetry fields
+        name_fields = ['telemetry_name', 'name', 'channel', 'signal']
+        has_name = any(field in normalized_fields for field in name_fields)
+        
+        value_fields = ['telemetry_value', 'value', 'val']
+        has_value = any(field in normalized_fields for field in value_fields)
+        
+        # Build list of missing required column types
+        missing_columns = []
+        if not has_timestamp:
+            missing_columns.append("timestamp")
+        if not has_name:
+            missing_columns.append("telemetry_name")
+        if not has_value:
+            missing_columns.append("telemetry_value")
+        
+        if missing_columns:
+            raise ValueError(
+                f"Barber telemetry import error: missing required columns: {', '.join(missing_columns)}. "
+                f"Check that you extracted the official TRD CSVs into data/barber/telemetry.csv."
+            )
+
+    @classmethod
     def import_file(cls, file: BinaryIO | TextIO, session_id: str) -> ImportResult:
         """
         Import TRD long CSV file and pivot to telemetry format.
@@ -55,6 +95,7 @@ class TRDLongCSVImporter:
             ImportResult with telemetry data and any warnings
         """
         warnings = []
+        skipped_rows = 0
         
         try:
             # Handle both binary and text files
@@ -72,10 +113,14 @@ class TRDLongCSVImporter:
             rows = list(reader)
             
             if not rows:
-                return ImportResult.failure(["Empty CSV file"])
+                return ImportResult.failure(["Barber telemetry import error: Empty telemetry.csv file. It must contain data rows from the official dataset."])
             
-            # Detect field mappings
+            # Detect field mappings and validate required columns
             fieldnames = reader.fieldnames or []
+            try:
+                cls.validate_required_columns(fieldnames)
+            except ValueError as e:
+                return ImportResult.failure([str(e)])
             
             # Try to detect ts_ms, name, value fields
             ts_field = None
@@ -112,11 +157,12 @@ class TRDLongCSVImporter:
             telemetry_by_timestamp = defaultdict(dict)
             unknown_names = set()
             
-            for row in rows:
+            for row_num, row in enumerate(rows, 1):
                 # Get timestamp
                 ts_value = row.get(ts_field, '').strip()
                 if not ts_value:
-                    warnings.append("Row missing timestamp, skipping")
+                    warnings.append(f"Row {row_num}: missing timestamp, skipping")
+                    skipped_rows += 1
                     continue
                 
                 # Convert to ms if needed
@@ -128,7 +174,8 @@ class TRDLongCSVImporter:
                         # Try to parse as ISO timestamp
                         ts_ms = iso_to_ms(ts_value)
                 except ValueError as e:
-                    warnings.append(f"Invalid timestamp '{ts_value}': {e}")
+                    warnings.append(f"Row {row_num}: invalid timestamp '{ts_value}': {e}")
+                    skipped_rows += 1
                     continue
                 
                 # Get and normalize channel name
@@ -148,6 +195,22 @@ class TRDLongCSVImporter:
                 if not field_name:
                     unknown_names.add(telemetry_name)
                     continue
+                
+                # Check for invalid numeric values
+                if field_name in ['speed_kph', 'throttle_pct', 'brake_bar', 'acc_long_g', 'acc_lat_g', 'steer_deg']:
+                    try:
+                        float(telemetry_value)
+                    except (ValueError, TypeError):
+                        warnings.append(f"Row {row_num}: invalid {telemetry_name} value '{telemetry_value}', skipping row")
+                        skipped_rows += 1
+                        continue
+                elif field_name == 'gear':
+                    try:
+                        int(float(telemetry_value))
+                    except (ValueError, TypeError):
+                        warnings.append(f"Row {row_num}: invalid {telemetry_name} value '{telemetry_value}', skipping row")
+                        skipped_rows += 1
+                        continue
                 
                 # Store multiple values for the same field to handle duplicates
                 if field_name not in telemetry_by_timestamp[ts_ms]:
@@ -247,10 +310,14 @@ class TRDLongCSVImporter:
                 telemetry=telemetry_list
             )
             
+            # Add summary of skipped rows if any
+            if skipped_rows > 0:
+                warnings.append(f"Barber telemetry import: {skipped_rows} rows skipped due to invalid data (see log output).")
+            
             return ImportResult.success(bundle, warnings)
             
         except Exception as e:
-            return ImportResult.failure([f"Error processing TRD CSV: {str(e)}"])
+            return ImportResult.failure([f"Barber telemetry import error: {str(e)}"])
     
     @classmethod
     def _process_field_value(cls, field_name: str, raw_value: str, check_outlier_only: bool = False):

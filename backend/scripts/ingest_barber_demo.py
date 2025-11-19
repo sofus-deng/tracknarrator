@@ -21,8 +21,10 @@ from tracknarrator.schema import Session, SessionBundle
 
 def main():
     # Define paths
-    data_dir = Path("data/barber")
-    output_file = Path("fixtures/bundle_sample_barber.json")
+    # Get the repository root directory (parent of backend/)
+    repo_root = Path(__file__).parent.parent.parent
+    data_dir = repo_root / "data" / "barber"
+    output_file = repo_root / "fixtures" / "bundle_sample_barber.json"
     
     # Verify data directory exists
     if not data_dir.exists():
@@ -50,48 +52,80 @@ def main():
     telemetry_file = data_dir / "telemetry.csv"
     if telemetry_file.exists():
         print(f"Importing telemetry from {telemetry_file}")
-        with open(telemetry_file, 'r') as f:
-            result = TRDLongCSVImporter.import_file(f, session.id)
-            if result.bundle:
-                bundle.telemetry = result.bundle.telemetry
-                print(f"  Imported {len(bundle.telemetry)} telemetry points")
-            else:
-                print(f"  Warning: No telemetry data imported")
-                print(f"  Warnings: {result.warnings}")
+        try:
+            with open(telemetry_file, 'r') as f:
+                result = TRDLongCSVImporter.import_file(f, session.id)
+                if result.bundle:
+                    bundle.telemetry = result.bundle.telemetry
+                    print(f"  Imported {len(bundle.telemetry)} telemetry points")
+                    # Print any warnings about skipped rows
+                    for warning in result.warnings:
+                        if "rows skipped" in warning:
+                            print(f"  {warning}")
+                else:
+                    print(f"  Error: No telemetry data imported")
+                    for warning in result.warnings:
+                        print(f"    {warning}")
+                    sys.exit(1)
+        except Exception as e:
+            print(f"  Error: Failed to import telemetry: {e}")
+            sys.exit(1)
     else:
-        print(f"  Warning: Telemetry file {telemetry_file} not found")
+        print(f"  Error: Telemetry file {telemetry_file} not found")
+        print(f"  Expected file: data/barber/telemetry.csv (TRD long format)")
+        sys.exit(1)
     
     # Import weather data
     weather_file = data_dir / "weather.csv"
     if weather_file.exists():
         print(f"Importing weather from {weather_file}")
-        with open(weather_file, 'r') as f:
-            result = WeatherCSVImporter.import_file(f, session.id)
-            if result.bundle:
-                bundle.weather = result.bundle.weather
-                print(f"  Imported {len(bundle.weather)} weather points")
-            else:
-                print(f"  Warning: No weather data imported")
-                print(f"  Warnings: {result.warnings}")
+        try:
+            with open(weather_file, 'r') as f:
+                result = WeatherCSVImporter.import_file(f, session.id)
+                if result.bundle:
+                    bundle.weather = result.bundle.weather
+                    print(f"  Imported {len(bundle.weather)} weather points")
+                    # Print any warnings about skipped rows
+                    for warning in result.warnings:
+                        if "rows skipped" in warning:
+                            print(f"  {warning}")
+                else:
+                    print(f"  Error: No weather data imported")
+                    for warning in result.warnings:
+                        print(f"    {warning}")
+                    sys.exit(1)
+        except Exception as e:
+            print(f"  Error: Failed to import weather: {e}")
+            sys.exit(1)
     else:
-        print(f"  Warning: Weather file {weather_file} not found")
+        print(f"  Error: Weather file {weather_file} not found")
+        print(f"  Expected file: data/barber/weather.csv (weather data)")
+        sys.exit(1)
     
     # Import sections and laps data
     sections_file = data_dir / "sections.csv"
     if sections_file.exists():
         print(f"Importing sections from {sections_file}")
-        with open(sections_file, 'r') as f:
-            result = MYLAPSSectionsCSVImporter.import_file(f, session.id)
-            if result.bundle:
-                bundle.laps = result.bundle.laps
-                bundle.sections = result.bundle.sections
-                print(f"  Imported {len(bundle.laps)} laps")
-                print(f"  Imported {len(bundle.sections)} sections")
-            else:
-                print(f"  Warning: No sections data imported")
-                print(f"  Warnings: {result.warnings}")
+        try:
+            with open(sections_file, 'r') as f:
+                result = MYLAPSSectionsCSVImporter.import_file(f, session.id)
+                if result.bundle:
+                    bundle.laps = result.bundle.laps
+                    bundle.sections = result.bundle.sections
+                    print(f"  Imported {len(bundle.laps)} laps")
+                    print(f"  Imported {len(bundle.sections)} sections")
+                else:
+                    print(f"  Error: No sections data imported")
+                    for warning in result.warnings:
+                        print(f"    {warning}")
+                    sys.exit(1)
+        except Exception as e:
+            print(f"  Error: Failed to import sections: {e}")
+            sys.exit(1)
     else:
-        print(f"  Warning: Sections file {sections_file} not found")
+        print(f"  Error: Sections file {sections_file} not found")
+        print(f"  Expected file: data/barber/sections.csv (MYLAPS sections)")
+        sys.exit(1)
     
     # Write output bundle
     print(f"Writing bundle to {output_file}")

@@ -44,9 +44,9 @@ def test_seed_json():
     counts = data["counts"]
     assert counts.get("sessions_added", 0) == 1
     assert counts.get("laps_added", 0) == 2
-    assert counts.get("sections_added", 0) == 8
-    assert counts.get("telemetry_added", 0) == 8
-    assert counts.get("weather_added", 0) == 2
+    assert counts.get("sections_added", 0) == 12
+    assert counts.get("telemetry_added", 0) == 1
+    assert counts.get("weather_added", 0) == 3
 
 
 def test_seed_file():

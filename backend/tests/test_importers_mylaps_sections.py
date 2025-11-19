@@ -203,7 +203,7 @@ class TestMYLAPSSectionsCSVImporter:
         result = MYLAPSSectionsCSVImporter.import_file(file_obj, "test-session")
         
         assert result.bundle is None
-        assert any("No valid section headers found" in w for w in result.warnings)
+        assert any("missing required columns: LAP_TIME" in w for w in result.warnings)
     
     def test_ss_mmm_format(self):
         """Test laptime in ss.mmm format."""

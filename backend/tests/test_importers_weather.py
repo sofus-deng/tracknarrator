@@ -155,7 +155,7 @@ invalid,26,5,55
         result = WeatherCSVImporter.import_file(file_obj, "test-session")
         
         assert result.bundle is None  # Should fail
-        assert any("No valid weather data found" in w for w in result.warnings)
+        assert any("missing required columns" in w for w in result.warnings)
     
     def test_comma_delimiter(self):
         """Test importing with comma delimiter."""
@@ -264,7 +264,7 @@ invalid,26,5,55
         result = WeatherCSVImporter.import_file(file_obj, "test-session")
         
         assert result.bundle is None  # Should fail
-        assert any("No valid weather data found" in w for w in result.warnings)
+        assert any("missing required columns" in w for w in result.warnings)
     
     def test_invalid_timestamp(self):
         """Test handling of invalid timestamp."""
@@ -297,7 +297,7 @@ invalid;25.5;35.2;65.0;1013.25;5.2;180.0;0"""
         result = WeatherCSVImporter.import_file(file_obj, "test-session")
         
         assert result.bundle is None
-        assert any("No valid weather data found" in w for w in result.warnings)
+        assert any("missing required columns" in w for w in result.warnings)
     
     def test_fractional_timestamp(self):
         """Test handling of fractional timestamp seconds."""
