@@ -118,3 +118,36 @@ th {
 .kpi .v {
   font-weight: 700
 }
+
+.intro-block {
+  background: var(--card);
+  border: 1px solid #202733;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.intro-block p {
+  margin: 8px 0;
+}
+
+.helper-text {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 4px 0 12px;
+}
+
+.docs-links {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #202733;
+}
+
+.docs-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.docs-links a:hover {
+  text-decoration: underline;
+}

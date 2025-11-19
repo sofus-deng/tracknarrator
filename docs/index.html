@@ -4,15 +4,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TrackNarrator Showcase</title>
+  <title>TrackNarrator Demo: Barber Motorsports Park</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 
 <body>
   <main class="container">
-    <h1>TrackNarrator Showcase</h1>
-    <p class="muted">Open-source demo reader for <code>demo/export/summary.json</code>. Run <code>make demo</code>
-      first.</p>
+    <h1>TrackNarrator Demo: Barber Motorsports Park</h1>
+    
+    <div class="intro-block">
+      <p><strong>TrackNarrator</strong> turns Toyota GR Cup telemetry into coach-ready post-session reports.</p>
+      <p>This demo shows a pre-generated SessionBundle v0.1.2 from the official Hack the Track Barber Motorsports Park dataset.</p>
+      <p><em>How to read:</em> Lap deltas on the left, key events and coaching insights on the right, coach score and narrative summary below.</p>
+    </div>
+    
+    <p class="muted">Open-source demo reader for <code>demo/export/summary.json</code>. Run <code>make demo</code> first.</p>
 
     <section class="controls">
       <button id="loadBtn">Load summary.json</button>
@@ -29,25 +35,28 @@
 
     <section id="kpis" class="kpis hidden"></section>
     <section class="controls">
-      <label class="muted">Lang:</label>
+      <label class="muted">Display Language:</label>
       <select id="langSel">
         <option value="zh-Hant">zh-Hant</option>
         <option value="en">en</option>
       </select>
-      <button id="vizBtn">Load Lap Deltas</button>
+      <button id="vizBtn">Show Lap Time Analysis</button>
     </section>
     <section>
-      <h2>Lap Delta</h2>
+      <h2>Lap Time Deltas</h2>
+      <p class="helper-text">Shows lap time deltas vs a reference lap. Negative = faster, Positive = slower.</p>
       <canvas id="lapChart" width="1000" height="240"
         style="max-width:100%;border:1px solid #243040;border-radius:10px;background:#0f141b"></canvas>
     </section>
     <section>
-      <h2>Top Events & Share Cards</h2>
+      <h2>Key Events & Coaching Insights</h2>
+      <p class="helper-text">Outliers detected using robust statistics – these are laps/sections worth discussing with the driver.</p>
       <div id="cards" class="grid"></div>
     </section>
     <section>
-      <h2>Coach Score</h2>
-      <button id="coachBtn">Load Coach Score</button>
+      <h2>Coach Score & Performance Badge</h2>
+      <p class="helper-text">Auto-generated performance assessment based on consistency and key events.</p>
+      <button id="coachBtn">Generate Coach Assessment</button>
       <canvas id="coachGauge" width="300" height="160"
         style="max-width:100%;border:1px solid #243040;border-radius:10px;background:#0f141b"></canvas>
       <div class="muted" id="coachMeta"></div>
@@ -61,12 +70,20 @@
       <details>
         <summary>Data source</summary>
         <ul>
-          <li>Default demo: reads <code>docs/data/summary.json</code></li>
+          <li>Default demo: reads <code>docs/data/summary.json</code> (SessionBundle v0.1.2)</li>
           <li>Shared token: add <code>?token=<TOKEN></code></li>
           <li>Live API: add <code>?sid=<SESSION_ID></code></li>
         </ul>
+        <p><small>Note: Raw TRD files are not shipped in this repo. This demo bundle is derived from the official Hack the Track / TRD Barber dataset.</small></p>
       </details>
     </section>
+    
+    <footer class="docs-links">
+      <p class="muted">
+        <a href="../README.md">Project Overview</a> •
+        <a href="SPEC-schema-v0.1.2.md">Schema Documentation</a>
+      </p>
+    </footer>
   </main>
   <script src="app.js"></script>
 </body>
