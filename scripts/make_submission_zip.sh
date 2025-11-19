@@ -1,28 +1,35 @@
 #!/usr/bin/env bash
+# TrackNarrator Hack the Track Submission ZIP Creator
+# 
+# This script creates a clean submission ZIP for the Hack the Track competition.
+# It uses git archive to include only tracked files from the current HEAD commit.
+# 
+# Intentionally excluded:
+# - Raw TRD datasets in data/ directory (ignored by .gitignore)
+# - Virtual environments (.venv/, .uv/)
+# - Python caches (__pycache__, *.pyc)
+# - Local environment files (.env, *.log)
+# - Build artifacts (dist/, build/, *.egg-info/)
+# - Any other files listed in .gitignore
+#
+# Usage:
+#   ./scripts/make_submission_zip.sh                    # Creates tracknarrator_hack-the-track_submission.zip
+#   ./scripts/make_submission_zip.sh my_submission.zip   # Creates my_submission.zip
+
 set -euo pipefail
+
+# Get the repository root directory
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
 cd "$ROOT"
 
-# 1) Generate demo artifacts
-bash demo/run_demo.sh
+# Set output filename (default or from first argument)
+OUTPUT="${1:-tracknarrator_hack-the-track_submission.zip}"
 
-# 2) Prepare bundle directory
-OUTDIR="submission"
-rm -rf "$OUTDIR"
-mkdir -p "$OUTDIR"/{demo-export,docs,submit}
+# Create the ZIP using git archive from current HEAD
+echo "Creating submission ZIP from tracked files at HEAD..."
+git archive --format=zip --output="$OUTPUT" HEAD
 
-cp -r demo/export "$OUTDIR/demo-export"
-cp -f docs/index.html docs/styles.css docs/app.js "$OUTDIR/docs" 2>/dev/null || true
-cp -f docs/api_quickref.md docs/demo_script.md "$OUTDIR/docs" 2>/dev/null || true
-cp -r docs/submit "$OUTDIR/submit"
-
-cp -f CHANGELOG.md "$OUTDIR/" 2>/dev/null || true
-test -f VERSION && cp -f VERSION "$OUTDIR/" || true
-test -f backend/pyproject.toml && cp -f backend/pyproject.toml "$OUTDIR/" || true
-
-# 3) Zip
-VER="$( (test -f VERSION && cat VERSION) || (grep -m1 '^version *= *' backend/pyproject.toml 2>/dev/null | sed -E 's/.*"(.*)".*/\1/') || echo '0.0.0' )"
-ZIP="TrackNarrator_submission_v${VER}.zip"
-rm -f "$ZIP"
-( cd "$OUTDIR" && zip -qr "../$ZIP" . )
-echo "Built $ZIP"
+echo "Created submission ZIP: $OUTPUT"
+echo ""
+echo "The ZIP contains only tracked files from the current HEAD commit."
+echo "It excludes data/, .venv/, __pycache__, and other ignored files per .gitignore."
