@@ -15,6 +15,10 @@ FastAPI backend for racing data import and analysis.
 - RESTful API for data ingestion and retrieval
 - Comprehensive test coverage
 
+## Documentation
+
+- Unified SessionBundle schema and TRD ingestion mapping: see [docs/SPEC-schema-v0.1.2.md](../docs/SPEC-schema-v0.1.2.md)
+
 ## Development
 
 ### Setup
