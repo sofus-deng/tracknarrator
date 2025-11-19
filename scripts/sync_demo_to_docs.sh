@@ -69,7 +69,7 @@ fi
 curl -sS --retry 5 --retry-all-errors \
   http://127.0.0.1:8000/sessions -o "$TMP/sessions.json" || true
 
-SID="$(python - <<'PY'
+SID="$(uv run python - <<'PY'
 import json,sys,os
 p=os.environ.get("P","/tmp/tn_pages/sessions.json")
 try:

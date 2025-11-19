@@ -67,7 +67,7 @@ SEED_RESPONSE=$(curl -sS -X POST "${BASE_URL}/dev/seed" \
     exit 1
 }
 
-SESSION_ID=$(echo "${SEED_RESPONSE}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('session_id', 'barber'))")
+SESSION_ID=$(echo "${SEED_RESPONSE}" | uv run python -c "import sys, json; print(json.load(sys.stdin).get('session_id', 'barber'))")
 echo "[accept_step16] using session_id: ${SESSION_ID}"
 
 # Test coach endpoint
@@ -81,7 +81,7 @@ COACH_RESPONSE=$(curl -sS -f "${BASE_URL}/session/${SESSION_ID}/coach") || {
 
 
 # Verify coach response contains expected fields
-python3 -c "
+uv run python -c "
 import json, sys
 try:
     data = json.loads('''${COACH_RESPONSE}''')
@@ -115,7 +115,7 @@ curl -sS -o "${EXPORT_ZIP}" "${BASE_URL}/session/${SESSION_ID}/export" || {
     exit 1
 }
 
-python3 - <<'PY'
+uv run python - <<'PY'
 import zipfile, json, sys, os
 zip_path = "/tmp/exp_accept16.zip"
 try:

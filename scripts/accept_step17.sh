@@ -51,15 +51,15 @@ curl -fsS -c "$COOK" -b "$COOK" http://127.0.0.1:8000/ui/login -o "$LOGIN_HTML"
 [ -s "$LOGIN_HTML" ] || { echo "login page empty"; exit 2; }
 
 CSRF="$(
-python - "$LOGIN_HTML" <<'PY'
+uv run python - "$LOGIN_HTML" <<'PY'
 import re,sys
 p=sys.argv[1]
 with open(p,'r',encoding='utf-8',errors='ignore') as f:
     html=f.read()
 m = (re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
-     or re.search(r'name="csrf[^"]*"[^>]*value="([^"]+)"', html)
-     or re.search(r'data-csrf="([^"]+)"', html)
-     or re.search(r'<meta[^>]+name="csrf"[^>]+content="([^"]+)"', html))
+ or re.search(r'name="csrf[^"]*"[^>]*value="([^"]+)"', html)
+ or re.search(r'data-csrf="([^"]+)"', html)
+ or re.search(r'<meta[^>]+name="csrf"[^>]+content="([^"]+)"', html))
 print(m.group(1) if m else(""))
 PY
 )"
@@ -103,7 +103,7 @@ curl -fsS --retry 5 --retry-all-errors -X POST -F "file=@${GPX}" \
 for _ in $(seq 1 60); do
   curl -sf http://127.0.0.1:8000/sessions -o "$TMP/sessions.json" || true
   SZ="$(
-    python - "$TMP/sessions.json" <<'PY'
+    uv run python - "$TMP/sessions.json" <<'PY'
 import json,sys
 try:
     j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
@@ -120,7 +120,7 @@ done
 
 # pick latest sid (tolerant to shapes)
 SID="$(
-  python - "$TMP/sessions.json" <<'PY'
+  uv run python - "$TMP/sessions.json" <<'PY'
 import json,sys
 j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
 arr=j.get("sessions") if isinstance(j,dict) else j
@@ -146,7 +146,7 @@ SHARE_JSON="$(mktemp "$TMP/share.XXXXXX.json")"
 curl -fsS --retry 5 --retry-all-errors -X POST -H 'Content-Type: application/json' -d '{}' \
      "http://127.0.0.1:8000/share/${SID}" -o "$SHARE_JSON"
 TOKEN="$(
-  python - "$SHARE_JSON" <<'PY'
+  uv run python - "$SHARE_JSON" <<'PY'
 import json,sys
 j=json.load(open(sys.argv[1],'r',encoding='utf-8'))
 print(j.get("token") or j.get("share_token") or "")
