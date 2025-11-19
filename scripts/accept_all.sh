@@ -8,6 +8,7 @@ TIMEOUT_PER_STEP="${TIMEOUT_PER_STEP:-240s}"  # 4 minutes per step default
 STEPS=(
   "accept_step14.sh"
   "accept_step15.sh"
+  "accept_step16.sh"
   "accept_step17.sh"
   "accept_step18.sh"
 )
