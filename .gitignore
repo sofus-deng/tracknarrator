@@ -25,6 +25,7 @@ node_modules/
 # --- Data/temp (keep fixtures!) ---
 tmp/
 data/
+*.zip
 # Do NOT ignore fixtures/*.jsondemo/export/
 
 backend/.coverage
