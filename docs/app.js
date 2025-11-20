@@ -22,6 +22,17 @@ window.tnSummary = null;
 window.tnViz = null;
 window.tnCoachScore = null;
 
+// Toast notification system
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.style.display = 'block';
+
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 3500);
+}
+
 async function fetchSummary() {
   const status = document.getElementById('status');
   status.textContent = 'Loading demo data...';
@@ -29,7 +40,8 @@ async function fetchSummary() {
     // Try primary path first, then fallback
     const data = await fetchStaticJson('data/summary.json', 'demo/export/summary.json');
     window.tnSummary = data; // Store globally for reuse
-    status.textContent = 'Loaded.';
+    status.textContent = '';
+    showToast('Demo session loaded.');
     renderKPIs(data);
     renderCards(data.cards || []);
     renderLaps((data.sparklines && data.sparklines.laps) || []);
@@ -176,7 +188,8 @@ async function fetchViz() {
 
     if (vizData && vizData.lap_delta_series) {
       drawLapChart(vizData.lap_delta_series);
-      status.textContent = 'Lap time analysis loaded.';
+      status.textContent = '';
+      showToast('Lap time analysis loaded.');
     } else {
       status.textContent = 'Lap time analysis not available for this demo.';
     }
@@ -243,7 +256,8 @@ async function fetchCoach() {
     // First check if we already have coach score data
     if (window.tnCoachScore) {
       drawCoachGauge(window.tnCoachScore);
-      status.textContent = 'Coach assessment loaded.';
+      status.textContent = '';
+      showToast('Coach assessment loaded.');
       return;
     }
 
@@ -253,7 +267,8 @@ async function fetchCoach() {
       data = await fetchStaticJson('data/coach_score.json', 'demo/export/coach_score.json');
       window.tnCoachScore = data; // Store globally
       drawCoachGauge(data);
-      status.textContent = 'Coach assessment loaded.';
+      status.textContent = '';
+      showToast('Coach assessment loaded.');
     } catch (e) {
       // Show friendly message if coach score is not available
       coachMeta.textContent = 'Coach assessment is not available in this demo.';

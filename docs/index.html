@@ -11,14 +11,18 @@
 <body>
   <main class="container">
     <h1>TrackNarrator Demo: Barber Motorsports Park</h1>
-    
+
     <div class="intro-block">
       <p><strong>TrackNarrator</strong> turns Toyota GR Cup telemetry into coach-ready post-session reports.</p>
-      <p>This demo shows a pre-generated SessionBundle v0.1.2 from the official Hack the Track Barber Motorsports Park dataset.</p>
-      <p><em>How to read:</em> Lap deltas on the left, key events and coaching insights on the right, coach score and narrative summary below.</p>
+      <p>This demo shows a pre-generated SessionBundle v0.1.2 from the official Hack the Track Barber Motorsports Park
+        dataset.</p>
+      <p><em>How to read:</em> Use the blue button below to load the demo. The cards show total laps and key lap times,
+        the chart shows lap time deltas vs a reference lap, 'Key Events & Coaching Insights' highlights notable laps,
+        and the coach score section shows an overall performance rating.</p>
     </div>
-    
-    <p class="muted">This page is a read-only viewer for a pre-generated demo session based on the official Hack the Track Barber dataset.</p>
+
+    <p class="muted">This page is a read-only viewer for a pre-generated demo session based on the official Hack the
+      Track Barber dataset.</p>
 
     <section class="controls">
       <button id="loadBtn">View Barber Demo Session</button>
@@ -46,22 +50,30 @@
     </section>
     <section>
       <h2>Lap Time Deltas</h2>
-      <p class="helper-text">Shows lap time deltas vs a reference lap. Negative = faster, Positive = slower.</p>
+      <p class="helper-text">Shows lap time delta (ms) vs the reference lap. Below zero = faster than reference, above
+        zero = slower.</p>
+      <div class="chart-legend">
+        <span class="legend-item"><span class="legend-color" style="background:#64d2ff;"></span> Driver lap</span>
+        <span class="legend-item"><span class="legend-color" style="background:#9ad46a;"></span> Moving average</span>
+      </div>
       <canvas id="lapChart" width="1000" height="240"
         style="max-width:100%;border:1px solid #243040;border-radius:10px;background:#0f141b"></canvas>
     </section>
     <section>
       <h2>Key Events & Coaching Insights</h2>
-      <p class="helper-text">Outliers detected using robust statistics – these are laps/sections worth discussing with the driver.</p>
+      <p class="helper-text">Outliers detected using robust statistics – these are laps/sections worth discussing with
+        the driver.</p>
       <div id="cards" class="grid"></div>
     </section>
     <section>
       <h2>Coach Score & Performance Badge</h2>
       <p class="helper-text">Auto-generated performance assessment based on consistency and key events.</p>
-      <button id="coachBtn">Generate Coach Assessment</button>
-      <canvas id="coachGauge" width="300" height="160"
-        style="max-width:100%;border:1px solid #243040;border-radius:10px;background:#0f141b"></canvas>
-      <div class="muted" id="coachMeta"></div>
+      <div class="coach-section">
+        <button id="coachBtn">Generate Coach Assessment</button>
+        <canvas id="coachGauge" width="300" height="160"
+          style="max-width:100%;border:1px solid #243040;border-radius:10px;background:#0f141b"></canvas>
+        <div class="muted" id="coachMeta"></div>
+      </div>
     </section>
 
     <section>
@@ -76,10 +88,11 @@
           <li>Shared token: add <code>?token=<TOKEN></code></li>
           <li>Live API: add <code>?sid=<SESSION_ID></code></li>
         </ul>
-        <p><small>Note: Raw TRD files are not shipped in this repo. This demo bundle is derived from the official Hack the Track / TRD Barber dataset.</small></p>
+        <p><small>Note: Raw TRD files are not shipped in this repo. This demo bundle is derived from the official Hack
+            the Track / TRD Barber dataset.</small></p>
       </details>
     </section>
-    
+
     <footer class="docs-links">
       <p class="muted">
         <a href="../README.md">Project Overview</a> •
@@ -87,6 +100,7 @@
       </p>
     </footer>
   </main>
+  <div id="toast" class="toast"></div>
   <script src="app.js"></script>
 </body>
 
