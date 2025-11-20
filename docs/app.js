@@ -188,13 +188,12 @@ async function fetchViz() {
 
     if (vizData && vizData.lap_delta_series) {
       drawLapChart(vizData.lap_delta_series);
-      status.textContent = '';
       showToast('Lap time analysis loaded.');
     } else {
-      status.textContent = 'Lap time analysis not available for this demo.';
+      showToast('Lap time analysis not available for this demo.');
     }
   } catch (e) {
-    status.textContent = 'Could not load lap time analysis.';
+    showToast('Could not load lap time analysis.');
     console.error(e);
   }
 }
@@ -203,18 +202,29 @@ function drawLapChart(series) {
   const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
   const W = cv.width, H = cv.height, pad = 28;
   const xs = series.map(d => d.lap_no), ys = series.map(d => d.delta_ms_to_median);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  let minY = Math.min(...ys), maxY = Math.max(...ys);
+
+  // Ensure zero is always visible in the chart
+  const range = maxY - minY;
+  const padding = range * 0.1; // Add 10% padding
+  if (minY > 0) minY = -padding;
+  if (maxY < 0) maxY = padding;
+
   const xMin = Math.min(...xs), xMax = Math.max(...xs);
   const x = (v) => pad + (W - 2 * pad) * (v - xMin) / (xMax - xMin || 1);
   const y = (v) => H - pad - (H - 2 * pad) * (v - minY) / ((maxY - minY) || 1);
+
   // axes
   ctx.strokeStyle = "#243040"; ctx.beginPath(); ctx.moveTo(pad, H - pad); ctx.lineTo(W - pad, H - pad); ctx.moveTo(pad, pad); ctx.lineTo(pad, H - pad); ctx.stroke();
-  // zero line
-  if (minY < 0 && maxY > 0) { ctx.strokeStyle = "#3a485a"; ctx.beginPath(); ctx.moveTo(pad, y(0)); ctx.lineTo(W - pad, y(0)); ctx.stroke(); }
+
+  // zero baseline - always visible and more prominent
+  ctx.strokeStyle = "#666666"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(pad, y(0)); ctx.lineTo(W - pad, y(0)); ctx.stroke(); ctx.lineWidth = 1;
+
   // line
   ctx.strokeStyle = "#64d2ff"; ctx.beginPath();
   series.forEach((d, i) => { const xx = x(d.lap_no), yy = y(d.delta_ms_to_median); i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); });
   ctx.stroke();
+
   // moving average
   ctx.strokeStyle = "#9ad46a"; ctx.beginPath();
   series.forEach((d, i) => { const xx = x(d.lap_no), yy = y(d.delta_ma3); i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); });
