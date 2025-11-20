@@ -1,0 +1,14 @@
+{
+  "lap_delta_series": [
+    {
+      "lap_no": 1,
+      "delta_ms_to_median": 1000,
+      "delta_ma3": 0
+    },
+    {
+      "lap_no": 2,
+      "delta_ms_to_median": -1000,
+      "delta_ma3": 0
+    }
+  ]
+}

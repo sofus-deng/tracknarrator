@@ -22,10 +22,10 @@
 
     <section class="controls">
       <button id="loadBtn">View Barber Demo Session</button>
-      <button id="shareBtn">Create Share Link</button>
+      <button id="shareBtn" class="hidden">Create Share Link</button>
       <span id="status" class="muted"></span>
     </section>
-    <p class="helper-text">Loads the prepared Barber Motorsports Park demo session from the bundled data.</p>
+    <p class="helper-text">Loads the prepared Barber Motorsports Park demo session with telemetry analysis.</p>
     <section id="shareResult" class="hidden">
       <h3>Share Link</h3>
       <p>Copy this link to share the session:</p>
@@ -72,12 +72,11 @@
       <details>
         <summary>Data source</summary>
         <ul>
-          <li>Default demo: reads <code>docs/demo/export/summary.json</code> (SessionBundle v0.1.2)</li>
+          <li>Default demo: reads <code>docs/data/summary.json</code> (SessionBundle v0.1.2)</li>
           <li>Shared token: add <code>?token=<TOKEN></code></li>
           <li>Live API: add <code>?sid=<SESSION_ID></code></li>
         </ul>
         <p><small>Note: Raw TRD files are not shipped in this repo. This demo bundle is derived from the official Hack the Track / TRD Barber dataset.</small></p>
-        <p><small>Developers can regenerate this demo locally using ./demo/run_demo.sh.</small></p>
       </details>
     </section>
     

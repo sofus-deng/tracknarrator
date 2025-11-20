@@ -1,1 +1,84 @@
-{"kpis":{"total_laps":0,"best_lap_ms":null,"median_lap_ms":null,"session_duration_ms":null},"events":[],"cards":[],"sparklines":{"laps_ms":[],"sections_ms":[],"speed_series":[]},"narrative":{"lines":["TrackNarrator demo placeholder"],"lang":"en"}}
+{
+  "kpis": {
+    "total_laps": 2,
+    "best_lap_ms": 68000,
+    "median_lap_ms": 69000,
+    "session_duration_ms": 138000
+  },
+  "events": [
+    {
+      "type": "Fast Lap",
+      "lap_no": 2,
+      "title": "Fastest Lap",
+      "description": "Lap 2 was the fastest lap of the session",
+      "icon": "🏁"
+    }
+  ],
+  "cards": [
+    {
+      "type": "Performance",
+      "lap_no": 2,
+      "title": "Best Lap Performance",
+      "metric": "68000ms",
+      "severity": 1.5,
+      "icon": "🏆"
+    }
+  ],
+  "sparklines": {
+    "laps_ms": [
+      70000,
+      68000
+    ],
+    "sections_ms": {
+      "IM1a": [
+        12000,
+        11000
+      ],
+      "IM1": [
+        11000,
+        11000
+      ],
+      "IM2a": [
+        11000,
+        11000
+      ],
+      "IM2": [
+        11000,
+        11000
+      ],
+      "IM3a": [
+        11000,
+        11000
+      ],
+      "FL": [
+        14000,
+        13000
+      ]
+    },
+    "speed_series": [
+      {
+        "ts_ms": 0,
+        "speed_kph": 102.0
+      }
+    ],
+    "laps": [
+      {
+        "lap_no": 1,
+        "lap_ms": 70000
+      },
+      {
+        "lap_no": 2,
+        "lap_ms": 68000
+      }
+    ]
+  },
+  "narrative": {
+    "lines": [
+      "Track analysis complete with 2 laps completed.",
+      "Best lap time: 68000ms, median: 69000ms.",
+      "Pace consistency: P90-P10 gap of 0ms."
+    ],
+    "lang": "en",
+    "ai_native": true
+  }
+}

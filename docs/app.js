@@ -1,14 +1,39 @@
+// Helper functions for static JSON loading with fallback paths
+async function fetchStaticJson(primaryPath, fallbackPath) {
+  try {
+    const res = await fetch(primaryPath, { cache: 'no-store' });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.warn(`Failed to fetch ${primaryPath}, trying fallback`);
+  }
+
+  try {
+    const res = await fetch(fallbackPath, { cache: 'no-store' });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.warn(`Failed to fetch fallback ${fallbackPath}`);
+  }
+
+  throw new Error(`Could not load data from ${primaryPath} or ${fallbackPath}`);
+}
+
+// Global variables to store loaded data
+window.tnSummary = null;
+window.tnViz = null;
+window.tnCoachScore = null;
+
 async function fetchSummary() {
   const status = document.getElementById('status');
   status.textContent = 'Loading demo data...';
   try {
-    const res = await fetch('demo/export/summary.json', { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
+    // Try primary path first, then fallback
+    const data = await fetchStaticJson('data/summary.json', 'demo/export/summary.json');
+    window.tnSummary = data; // Store globally for reuse
     status.textContent = 'Loaded.';
     renderKPIs(data);
     renderCards(data.cards || []);
     renderLaps((data.sparklines && data.sparklines.laps) || []);
+    renderEvents(data.events || []);
   } catch (e) {
     status.textContent = 'Demo data could not be loaded. Please try again later or contact the maintainer.';
     console.error(e);
@@ -42,9 +67,28 @@ function renderCards(cards) {
 }
 function renderLaps(laps) {
   const root = document.getElementById('laps');
-  if (!Array.isArray(laps) || laps.length === 0) { root.innerHTML = '<span class="muted">No laps. Run demo.</span>'; return; }
+  if (!Array.isArray(laps) || laps.length === 0) {
+    root.innerHTML = '<span class="muted">No laps are available in this demo session.</span>';
+    return;
+  }
   const rows = laps.slice(0, 500).map(r => `<tr><td>${r.lap_no ?? ''}</td><td>${r.lap_ms ?? ''}</td></tr>`).join('');
   root.innerHTML = `<table><thead><tr><th>Lap</th><th>Lap (ms)</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderEvents(events) {
+  const root = document.getElementById('cards');
+  if (!Array.isArray(events) || events.length === 0) {
+    root.innerHTML = '<span class="muted">No key events were flagged for this session.</span>';
+    return;
+  }
+  // For now, render events using the same card layout
+  root.innerHTML = events.map(e => `
+    <article class="card">
+      <div class="meta">${e.icon || '🏁'} ${e.type || 'Event'} • lap ${e.lap_no ?? '-'}</div>
+      <h3 class="title">${e.title || e.description || '(untitled)'}</h3>
+      <div class="meta">${e.metric || ''}</div>
+    </article>
+  `).join('');
 }
 document.getElementById('loadBtn').addEventListener('click', fetchSummary);
 
@@ -95,15 +139,51 @@ document.getElementById('copyBtn').addEventListener('click', copyShareUrl);
 // Multi-language UI is planned for future versions; the hosted demo currently defaults to English.
 function getLang() { return 'en'; }
 async function fetchViz() {
+  const status = document.getElementById('status');
+  status.textContent = 'Loading lap time analysis...';
   try {
-    // Try to infer session id from the already loaded summary.json path. Fallback: call /sessions to get latest.
-    const res = await fetch('../sessions'); // backend served locally during demo
-    const sessions = res.ok ? await res.json() : [];
-    const sid = sessions && sessions.length ? sessions[0].session_id : null;
-    if (!sid) throw new Error('No session');
-    const v = await (await fetch(`../session/${encodeURIComponent(sid)}/viz`, { cache: 'no-store' })).json();
-    drawLapChart(v.lap_delta_series || []);
-  } catch (e) { console.error(e); }
+    // Try to load from static files
+    let vizData = null;
+
+    // First check if we already have viz data
+    if (window.tnViz) {
+      vizData = window.tnViz;
+    } else {
+      // Try to load from static files
+      try {
+        vizData = await fetchStaticJson('data/viz.json', 'demo/export/viz.json');
+        window.tnViz = vizData; // Store globally
+      } catch (e) {
+        // If viz.json doesn't exist, try to derive from summary data
+        if (window.tnSummary && window.tnSummary.sparklines && window.tnSummary.sparklines.laps_ms) {
+          // Create a simple viz structure from summary data
+          const lapsMs = window.tnSummary.sparklines.laps_ms;
+          const medianLap = window.tnSummary.kpis && window.tnSummary.kpis.median_lap_ms;
+
+          if (medianLap && lapsMs.length > 0) {
+            vizData = {
+              lap_delta_series: lapsMs.map((lapMs, index) => ({
+                lap_no: index + 1,
+                delta_ms_to_median: lapMs - medianLap,
+                delta_ma3: 0 // Simple moving average would need more calculation
+              }))
+            };
+            window.tnViz = vizData;
+          }
+        }
+      }
+    }
+
+    if (vizData && vizData.lap_delta_series) {
+      drawLapChart(vizData.lap_delta_series);
+      status.textContent = 'Lap time analysis loaded.';
+    } else {
+      status.textContent = 'Lap time analysis not available for this demo.';
+    }
+  } catch (e) {
+    status.textContent = 'Could not load lap time analysis.';
+    console.error(e);
+  }
 }
 function drawLapChart(series) {
   const cv = document.getElementById('lapChart'); if (!cv || !series.length) return;
@@ -155,22 +235,36 @@ async function loadSummaryAuto() {
 window.__tn_loadSummaryAuto = loadSummaryAuto;
 
 async function fetchCoach() {
+  const status = document.getElementById('status');
+  const coachMeta = document.getElementById('coachMeta');
+  status.textContent = 'Generating coach assessment...';
+
   try {
-    // Prefer live API sid if available; else demo file
-    const res = await fetch('../sessions'); // may fail on static; tolerate
-    let sid = null;
-    if (res.ok) { const arr = await res.json(); if (Array.isArray(arr) && arr.length) sid = arr[0].session_id; }
+    // First check if we already have coach score data
+    if (window.tnCoachScore) {
+      drawCoachGauge(window.tnCoachScore);
+      status.textContent = 'Coach assessment loaded.';
+      return;
+    }
+
+    // Try to load from static files
     let data = null;
-    if (sid) {
-      const r = await fetch(`../session/${encodeURIComponent(sid)}/coach?lang=${getLang()}`, { cache: 'no-store' });
-      data = r.ok ? await r.json() : null;
+    try {
+      data = await fetchStaticJson('data/coach_score.json', 'demo/export/coach_score.json');
+      window.tnCoachScore = data; // Store globally
+      drawCoachGauge(data);
+      status.textContent = 'Coach assessment loaded.';
+    } catch (e) {
+      // Show friendly message if coach score is not available
+      coachMeta.textContent = 'Coach assessment is not available in this demo.';
+      status.textContent = 'Coach assessment not available.';
+      console.error(e);
     }
-    if (!data) {
-      const r = await fetch('demo/export/coach_score.json', { cache: 'no-store' });
-      data = r.ok ? await r.json() : null;
-    }
-    if (data) { drawCoachGauge(data); }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    coachMeta.textContent = 'Coach assessment is not available in this demo.';
+    status.textContent = 'Could not load coach assessment.';
+    console.error(e);
+  }
 }
 function drawCoachGauge(cs) {
   const cv = document.getElementById('coachGauge'); if (!cv) return;
