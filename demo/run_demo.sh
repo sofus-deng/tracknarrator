@@ -47,6 +47,7 @@ curl -sS "http://127.0.0.1:8000/session/${SESSION_ID}/export?lang=zh-Hant" -o de
 curl -sS "http://127.0.0.1:8000/session/${SESSION_ID}/export?lang=en" -o demo/export/export_en.zip
 
 # add coach_score.json (optional)
+DEMO_DIR="$ROOT_DIR/demo"
 if command -v curl >/dev/null 2>&1; then
   echo "Generating coach_score.json"
   curl -sS "http://127.0.0.1:8000/session/${SESSION_ID}/coach?lang=zh-Hant" > "$DEMO_DIR/export/coach_score.json" || true
