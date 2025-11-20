@@ -24,9 +24,9 @@ build/
 node_modules/
 # --- Data/temp (keep fixtures!) ---
 tmp/
-data/
+/data/
 *.zip
-# Do NOT ignore fixtures/*.jsondemo/export/
+# Do NOT ignore fixtures/*.json, demo/export/
 
 backend/.coverage
 backend/tracknarrator.db
