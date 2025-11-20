@@ -1,8 +1,8 @@
 async function fetchSummary() {
   const status = document.getElementById('status');
-  status.textContent = 'Loading demo/export/summary.json ...';
+  status.textContent = 'Loading demo data...';
   try {
-    const res = await fetch('../demo/export/summary.json', { cache: 'no-store' });
+    const res = await fetch('demo/export/summary.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     status.textContent = 'Loaded.';
@@ -10,7 +10,7 @@ async function fetchSummary() {
     renderCards(data.cards || []);
     renderLaps((data.sparklines && data.sparklines.laps) || []);
   } catch (e) {
-    status.textContent = 'Not found. Run `make demo` then refresh.';
+    status.textContent = 'Demo data could not be loaded. Please try again later or contact the maintainer.';
     console.error(e);
   }
 }
@@ -92,7 +92,8 @@ document.getElementById('shareBtn').addEventListener('click', createShareLink);
 document.getElementById('copyBtn').addEventListener('click', copyShareUrl);
 
 // Language and visualization functions
-function getLang() { const sel = document.getElementById('langSel'); return sel ? sel.value : 'zh-Hant'; }
+// Multi-language UI is planned for future versions; the hosted demo currently defaults to English.
+function getLang() { return 'en'; }
 async function fetchViz() {
   try {
     // Try to infer session id from the already loaded summary.json path. Fallback: call /sessions to get latest.
@@ -145,7 +146,7 @@ async function loadSummaryAuto() {
       return await r.json();
     }
     // default: demo mode
-    const r = await fetch('./data/summary.json', { cache: 'no-store' });
+    const r = await fetch('demo/export/summary.json', { cache: 'no-store' });
     if (!r.ok) throw new Error('demo fetch ' + r.status);
     return await r.json();
   } catch (e) { console.error(e); return { events: [], cards: [], sparklines: {} }; }
@@ -153,37 +154,37 @@ async function loadSummaryAuto() {
 // if page already had an init flow, keep it. Otherwise expose a helper:
 window.__tn_loadSummaryAuto = loadSummaryAuto;
 
-async function fetchCoach(){
-  try{
+async function fetchCoach() {
+  try {
     // Prefer live API sid if available; else demo file
     const res = await fetch('../sessions'); // may fail on static; tolerate
     let sid = null;
-    if(res.ok){ const arr = await res.json(); if(Array.isArray(arr) && arr.length) sid = arr[0].session_id; }
+    if (res.ok) { const arr = await res.json(); if (Array.isArray(arr) && arr.length) sid = arr[0].session_id; }
     let data = null;
-    if(sid){
-      const r = await fetch(`../session/${encodeURIComponent(sid)}/coach?lang=${getLang()}`, {cache:'no-store'});
+    if (sid) {
+      const r = await fetch(`../session/${encodeURIComponent(sid)}/coach?lang=${getLang()}`, { cache: 'no-store' });
       data = r.ok ? await r.json() : null;
     }
-    if(!data){
-      const r = await fetch('./data/coach_score.json', {cache:'no-store'});
+    if (!data) {
+      const r = await fetch('demo/export/coach_score.json', { cache: 'no-store' });
       data = r.ok ? await r.json() : null;
     }
-    if(data){ drawCoachGauge(data); }
-  }catch(e){ console.error(e); }
+    if (data) { drawCoachGauge(data); }
+  } catch (e) { console.error(e); }
 }
-function drawCoachGauge(cs){
-  const cv = document.getElementById('coachGauge'); if(!cv) return;
-  const ctx = cv.getContext('2d'); const W=cv.width, H=cv.height; ctx.clearRect(0,0,W,H);
-  const cx=W/2, cy=H-10, r=Math.min(W, H*1.8)/2 - 14;
+function drawCoachGauge(cs) {
+  const cv = document.getElementById('coachGauge'); if (!cv) return;
+  const ctx = cv.getContext('2d'); const W = cv.width, H = cv.height; ctx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H - 10, r = Math.min(W, H * 1.8) / 2 - 14;
   // arc background
-  ctx.lineWidth=16; ctx.strokeStyle="#243040"; ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,2*Math.PI); ctx.stroke();
+  ctx.lineWidth = 16; ctx.strokeStyle = "#243040"; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 2 * Math.PI); ctx.stroke();
   // value arc
-  const v = Math.max(0, Math.min(100, Number(cs.total_score||0)));
-  const ang = Math.PI + (v/100)*Math.PI;
-  ctx.strokeStyle="#64d2ff"; ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,ang); ctx.stroke();
+  const v = Math.max(0, Math.min(100, Number(cs.total_score || 0)));
+  const ang = Math.PI + (v / 100) * Math.PI;
+  ctx.strokeStyle = "#64d2ff"; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, ang); ctx.stroke();
   // text
-  ctx.fillStyle="#e6f2ff"; ctx.font="28px system-ui, sans-serif"; ctx.textAlign="center";
-  ctx.fillText(String(v), cx, cy-10);
+  ctx.fillStyle = "#e6f2ff"; ctx.font = "28px system-ui, sans-serif"; ctx.textAlign = "center";
+  ctx.fillText(String(v), cx, cy - 10);
   const meta = document.getElementById('coachMeta');
   const badge = cs.badge || '-';
   meta.textContent = `badge: ${badge}`;

@@ -8,6 +8,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
 mkdir -p docs/data
+mkdir -p docs/demo/export
 LOG="/tmp/dev_pages.log"
 TMP="/tmp/tn_pages"
 mkdir -p "$TMP"
@@ -112,5 +113,12 @@ fi
 
 fetch_or_fallback "http://127.0.0.1:8000/session/${SID}/viz"        docs/data/viz.json        || true
 fetch_or_fallback "http://127.0.0.1:8000/session/${SID}/coach"      docs/data/coach_score.json || true
+
+# Copy demo/export files to docs/demo/export/ for GitHub Pages
+echo "[sync_demo_to_docs] Copying demo files to docs/demo/export/"
+cp demo/export/summary.json docs/demo/export/ || echo "Warning: demo/export/summary.json not found"
+cp demo/export/coach_score.json docs/demo/export/ || echo "Warning: demo/export/coach_score.json not found"
+cp demo/export/export_en.zip docs/demo/export/ || echo "Warning: demo/export/export_en.zip not found"
+cp demo/export/export_zh.zip docs/demo/export/ || echo "Warning: demo/export/export_zh.zip not found"
 
 echo "[sync_demo_to_docs] OK (live API)"
