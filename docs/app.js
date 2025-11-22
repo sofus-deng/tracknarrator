@@ -151,8 +151,8 @@ document.getElementById('copyBtn').addEventListener('click', copyShareUrl);
 // Multi-language UI is planned for future versions; the hosted demo currently defaults to English.
 function getLang() { return 'en'; }
 async function fetchViz() {
-  const status = document.getElementById('status');
-  status.textContent = 'Loading lap time analysis...';
+  // const status = document.getElementById('status');
+  // status.textContent = 'Loading lap time analysis...';
   try {
     // Try to load from static files
     let vizData = null;
