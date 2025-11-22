@@ -34,20 +34,17 @@ function showToast(message) {
 }
 
 async function fetchSummary() {
-  const status = document.getElementById('status');
-  status.textContent = 'Loading demo data...';
   try {
     // Try primary path first, then fallback
     const data = await fetchStaticJson('data/summary.json', 'demo/export/summary.json');
     window.tnSummary = data; // Store globally for reuse
-    status.textContent = '';
     showToast('Demo session loaded.');
     renderKPIs(data);
     renderCards(data.cards || []);
     renderLaps((data.sparklines && data.sparklines.laps) || []);
     renderEvents(data.events || []);
   } catch (e) {
-    status.textContent = 'Demo data could not be loaded. Please try again later or contact the maintainer.';
+    showToast('Demo data could not be loaded. Please try again later or contact the maintainer.');
     console.error(e);
   }
 }
@@ -102,13 +99,10 @@ function renderEvents(events) {
     </article>
   `).join('');
 }
-document.getElementById('loadBtn').addEventListener('click', fetchSummary);
+document.getElementById('loadBtn')?.addEventListener('click', fetchSummary);
 
 // Share functionality
 async function createShareLink() {
-  const status = document.getElementById('status');
-  status.textContent = 'Creating share link...';
-
   try {
     // For demo purposes, use the barber session ID
     const sessionId = 'barber-demo-r1';
@@ -124,9 +118,9 @@ async function createShareLink() {
     shareUrl.value = `${window.location.origin}/docs/share.html?token=${data.token}`;
     shareResult.classList.remove('hidden');
 
-    status.textContent = 'Share link created!';
+    showToast('Share link created!');
   } catch (e) {
-    status.textContent = 'Failed to create share link';
+    showToast('Failed to create share link');
     console.error(e);
   }
 }
@@ -135,17 +129,11 @@ function copyShareUrl() {
   const shareUrl = document.getElementById('shareUrl');
   shareUrl.select();
   document.execCommand('copy');
-
-  const copyBtn = document.getElementById('copyBtn');
-  const originalText = copyBtn.textContent;
-  copyBtn.textContent = 'Copied!';
-  setTimeout(() => {
-    copyBtn.textContent = originalText;
-  }, 2000);
+  showToast('Share link copied to clipboard.');
 }
 
-document.getElementById('shareBtn').addEventListener('click', createShareLink);
-document.getElementById('copyBtn').addEventListener('click', copyShareUrl);
+document.getElementById('shareBtn')?.addEventListener('click', createShareLink);
+document.getElementById('copyBtn')?.addEventListener('click', copyShareUrl);
 
 // Language and visualization functions
 // Multi-language UI is planned for future versions; the hosted demo currently defaults to English.
@@ -258,15 +246,12 @@ async function loadSummaryAuto() {
 window.__tn_loadSummaryAuto = loadSummaryAuto;
 
 async function fetchCoach() {
-  const status = document.getElementById('status');
   const coachMeta = document.getElementById('coachMeta');
-  status.textContent = 'Generating coach assessment...';
 
   try {
     // First check if we already have coach score data
     if (window.tnCoachScore) {
       drawCoachGauge(window.tnCoachScore);
-      status.textContent = '';
       showToast('Coach assessment loaded.');
       return;
     }
@@ -277,17 +262,16 @@ async function fetchCoach() {
       data = await fetchStaticJson('data/coach_score.json', 'demo/export/coach_score.json');
       window.tnCoachScore = data; // Store globally
       drawCoachGauge(data);
-      status.textContent = '';
       showToast('Coach assessment loaded.');
     } catch (e) {
       // Show friendly message if coach score is not available
       coachMeta.textContent = 'Coach assessment is not available in this demo.';
-      status.textContent = 'Coach assessment not available.';
+      showToast('Coach assessment not available.');
       console.error(e);
     }
   } catch (e) {
     coachMeta.textContent = 'Coach assessment is not available in this demo.';
-    status.textContent = 'Could not load coach assessment.';
+    showToast('Could not load coach assessment.');
     console.error(e);
   }
 }
