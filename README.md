@@ -65,12 +65,34 @@ Download the Barber dataset zip from the hackathon portal.
 
 Unzip it into data/barber/.
 
-Expected structure (described in words):
-- data/barber/telemetry.csv    -> TRD long-format telemetry (timestamp, telemetry_name, telemetry_value)
-- data/barber/sections.csv     -> timing / sections data (e.g. MYLAPS)
-- data/barber/weather.csv      -> weather time series
+### Option A: Quick ingestion (if you already have canonical CSVs)
 
-Ingestion command:
+If you already have the canonical CSV files (telemetry.csv, weather.csv, sections.csv), you can run:
+
+```
+./scripts/ingest_barber_demo.sh
+```
+
+### Option B: Complete workflow from raw TRD files
+
+**Step 0: Extract raw dataset**
+```
+mkdir -p data/barber/raw
+```
+
+Download the Barber dataset zip from the hackathon portal and unzip it into `data/barber/raw/`.
+
+**Step 1: Prepare canonical CSVs**
+```
+./scripts/prepare_barber_from_raw.sh
+```
+
+This script:
+- Reads raw TRD files from `data/barber/raw/`
+- Converts them to canonical formats expected by the ingestion script
+- Outputs: `data/barber/telemetry.csv`, `data/barber/weather.csv`, `data/barber/sections.csv`
+
+**Step 2: Ingest canonical CSVs**
 ```
 ./scripts/ingest_barber_demo.sh
 ```
