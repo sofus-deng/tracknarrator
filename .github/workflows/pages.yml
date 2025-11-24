@@ -1,5 +1,8 @@
 name: pages
 
+# NOTE: This workflow previously set up Python/uv and ran tests/demo generation before building docs.
+# It has been simplified to only build and deploy the static docs/ folder to avoid timeouts.
+
 on:
   push:
     branches: [ main ]
@@ -27,20 +30,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v4
-      - name: Generate demo artifacts into docs/data
-        run: ./scripts/sync_demo_to_docs.sh
-      - name: Configure Pages
+      # NOTE: Tests are no longer run in the Pages workflow to avoid timeouts.
+      # They should be handled by a separate CI workflow.
+      - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Upload artifact
+      - name: Upload static site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs
+          path: docs
   deploy:
     if: ${{ !github.event.repository.private }}
     needs: build
