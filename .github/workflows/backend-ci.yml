@@ -1,36 +1,40 @@
 name: backend-ci
+
 on:
   push:
     paths:
       - "backend/**"
       - "demo/**"
       - "scripts/**"
-      - "docs/**"
-      - ".github/workflows/**"
+      - "fixtures/**"
   pull_request:
     paths:
       - "backend/**"
       - "demo/**"
       - "scripts/**"
-      - "docs/**"
-      - ".github/workflows/**"
+      - "fixtures/**"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Cache uv
         uses: actions/cache@v4
         with:
@@ -40,35 +44,39 @@ jobs:
           key: uv-${{ runner.os }}-${{ hashFiles('backend/pyproject.toml') }}
           restore-keys: |
             uv-${{ runner.os }}-
+
       - name: Run tests
         working-directory: backend
         run: uv run pytest -q
+
       - name: Acceptance (all steps)
         run: ./scripts/accept_all.sh
+
       - name: Acceptance (step 10)
-        run: |
-          ./scripts/accept_step10.sh
+        run: ./scripts/accept_step10.sh
+
       - name: Acceptance (step 11)
-        run: |
-          ./scripts/accept_step11.sh
+        run: ./scripts/accept_step11.sh
+
       - name: Acceptance (step 12)
-        run: |
-          ./scripts/accept_step12.sh
+        run: ./scripts/accept_step12.sh
+
       - name: Acceptance (step 13)
-        run: |
-          ./scripts/accept_step13.sh
+        run: ./scripts/accept_step13.sh
+
       - name: Acceptance (step 14)
-        run: |
-          ./scripts/accept_step14.sh
+        run: ./scripts/accept_step14.sh
+
       - name: Acceptance (step 15)
-        run: |
-          ./scripts/accept_step15.sh
-      - name: Acceptance (step 16)
+        run: ./scripts/accept_step15.sh
+
+      - name: Acceptance (step 16–19)
         run: |
           ./scripts/accept_step16.sh
           ./scripts/accept_step17.sh
           ./scripts/accept_step18.sh
           ./scripts/accept_step19.sh
+
       - name: Upload demo artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,6 +87,7 @@ jobs:
             demo/export/export_zh.zip
             demo/export/export_en.zip
           if-no-files-found: ignore
+
 permissions:
   contents: read
   actions: read
