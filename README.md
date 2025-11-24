@@ -100,7 +100,13 @@ This script:
 This script:
 - Reads the TRD CSVs from data/barber/
 - Maps them into the unified SessionBundle schema (v0.1.2)
-- Regenerates fixtures/bundle_sample_barber.json, which is then used by the demo and docs flows.
+- Generates data/barber/bundle_full_barber.json (full local bundle, not tracked by git)
+- Creates fixtures/bundle_sample_barber.json (downsampled version suitable for GitHub)
+
+If you need to regenerate the downsampled bundle after modifying the full bundle, you can run:
+```
+uv run python backend/scripts/shrink_barber_bundle.py
+```
 
 The schema and mappings are described in docs/SPEC-schema-v0.1.2.md.
 

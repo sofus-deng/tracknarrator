@@ -64,7 +64,7 @@ def detect_telemetry_format(fieldnames: List[str]) -> str:
     long_format_count = sum(1 for indicator in long_format_indicators if indicator in normalized)
     
     # Check for simplified long format indicators
-    simplified_indicators = ['ts_ms', 'name', 'value']
+    simplified_indicators = ['timestamp', 'telemetry_name', 'telemetry_value']
     simplified_count = sum(1 for indicator in simplified_indicators if indicator in normalized)
     
     if long_format_count >= 3 or simplified_count >= 3:
@@ -79,15 +79,15 @@ def normalize_header(header: str) -> str:
     
     # Timestamp mappings
     if header_lower in ['timestamp', 'meta_time', 'ts_ms', 'timestamp_ms', 'time_ms', 'time_utc_seconds']:
-        return 'ts_ms'
+        return 'timestamp'
     
     # Telemetry name mappings
     if header_lower in ['telemetry_name', 'name', 'channel', 'signal']:
-        return 'name'
+        return 'telemetry_name'
     
     # Telemetry value mappings
     if header_lower in ['telemetry_value', 'value', 'val']:
-        return 'value'
+        return 'telemetry_value'
     
     return header.strip()
 
@@ -98,7 +98,7 @@ def process_telemetry_long_format(rows: List[Dict[str, str]], fieldnames: List[s
     header_map = {}
     for field in fieldnames:
         normalized = normalize_header(field)
-        if normalized in ['ts_ms', 'name', 'value']:
+        if normalized in ['timestamp', 'telemetry_name', 'telemetry_value']:
             header_map[field] = normalized
     
     # Process rows
@@ -110,7 +110,7 @@ def process_telemetry_long_format(rows: List[Dict[str, str]], fieldnames: List[s
                 new_row[canonical_name] = row[original_name].strip()
         
         # Only include rows with all required fields
-        if all(field in new_row and new_row[field] for field in ['ts_ms', 'name', 'value']):
+        if all(field in new_row and new_row[field] for field in ['timestamp', 'telemetry_name', 'telemetry_value']):
             processed_rows.append(new_row)
     
     return processed_rows
@@ -148,9 +148,9 @@ def process_telemetry_wide_format(rows: List[Dict[str, str]], fieldnames: List[s
                 continue
             
             processed_rows.append({
-                'ts_ms': timestamp_value,
-                'name': telemetry_name,
-                'value': telemetry_value
+                'timestamp': timestamp_value,
+                'telemetry_name': telemetry_name,
+                'telemetry_value': telemetry_value
             })
     
     return processed_rows
@@ -201,7 +201,7 @@ def process_telemetry(raw_dir: Path, out_dir: Path) -> Tuple[int, str]:
     # Write output
     output_file = out_dir / 'telemetry.csv'
     with open(output_file, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['ts_ms', 'name', 'value'])
+        writer = csv.DictWriter(f, fieldnames=['timestamp', 'telemetry_name', 'telemetry_value'])
         writer.writeheader()
         writer.writerows(processed_rows)
     
